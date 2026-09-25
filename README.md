@@ -21,7 +21,7 @@ npm install
 npm run dev
 ```
 
-打开 http://127.0.0.1:5173 。Vite 将 `/api` 与 `/uploads` 代理至 8080。设置 `DEMO_PASSWORD` 时，首次启动会创建 `student@example.test`、`helper@example.test`、`moderator@example.test`（数学板块）和 `admin@example.test`，共用指定密码。公开环境请勿设置演示密码。
+打开 http://127.0.0.1:5174 。Vite 将 `/api` 与 `/uploads` 代理至后端 8081 端口。设置 `DEMO_PASSWORD` 时，首次启动会创建 `student@example.test`、`helper@example.test`、`moderator@example.test`（数学板块）和 `admin@example.test`，共用指定密码。公开环境请勿设置演示密码。
 
 ## 当前边界
 
