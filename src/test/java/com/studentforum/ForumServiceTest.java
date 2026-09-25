@@ -60,4 +60,12 @@ class ForumServiceTest {
         service.feature(author,5,true);
         verify(mapper,never()).addPoints(anyLong(),anyInt());
     }
+
+    @Test void reportResultNotifiesReporterInChinese() {
+        when(mapper.user(1)).thenReturn(Map.of("id",1L,"role","admin","status","active"));
+        when(mapper.reportById(9)).thenReturn(Map.of("id",9L,"reporter_id",2L,"target_type","user","target_id",3L));
+        when(mapper.handleReport(9,"rejected",1,"证据不足")).thenReturn(1);
+        service.handle(author,9,Map.of("action","reject","note","证据不足"));
+        verify(mapper).notifyUser(2,"report","你的举报处理结果：已驳回。处理备注：证据不足",null);
+    }
 }

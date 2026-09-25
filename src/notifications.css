@@ -1,0 +1,8 @@
+.notification-item{padding:18px 20px;border-bottom:1px solid #e5ece8;background:#fff;font-size:14px;line-height:1.7}
+.notification-item.unread{border-left:3px solid #0b7771;background:#f5faf8}
+.notification-item>div:first-child{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.notification-kind{color:#0b7771;font-weight:700;font-size:12px}
+.notification-date{color:#91a39b;font-size:12px}
+.notification-item p{margin:10px 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#344e45}
+.notification-actions{display:flex;gap:16px}
+.notification-actions a,.notification-actions button{border:0;background:none;padding:0;color:#0b7771;font-size:12px;cursor:pointer}

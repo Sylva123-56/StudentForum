@@ -135,7 +135,16 @@ public class ForumService {
             long userId = "user".equals(type)?targetId:"post".equals(type)?number(mapper.post(targetId),"author_id"):number(mapper.reply(targetId),"author_id");
             mapper.userStatus(userId,"mute".equals(action)?"muted":"banned");
         }
-        mapper.notifyUser(number(report,"reporter_id"),"report","你的举报已有处理结果："+action,null);
+        String result = switch (action) {
+            case "reject" -> "已驳回";
+            case "hide" -> "已隐藏内容";
+            case "delete" -> "已删除内容";
+            case "mute" -> "已禁言用户";
+            case "ban" -> "已封禁用户";
+            default -> throw new IllegalStateException("未知处理方式");
+        };
+        String message = "你的举报处理结果："+result+(note.isBlank()?"":"。处理备注："+note);
+        mapper.notifyUser(number(report,"reporter_id"),"report",message.length()>255?message.substring(0,255):message,null);
         if (!"reject".equals(action)) reward(number(report,"reporter_id"),"report_valid",2,"report",reportId,2);
         mapper.adminLog(id(auth),"report_"+action,type,targetId,note);
     }
