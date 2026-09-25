@@ -8,7 +8,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Configuration
 public class DemoAccounts {
-    @Bean ApplicationRunner demoAccounts(ForumMapper mapper,PasswordEncoder encoder,@Value("${forum.demo-password:}") String password) {
+    @Bean ApplicationRunner demoAccountSeeder(ForumMapper mapper,PasswordEncoder encoder,@Value("${forum.demo-password:}") String password) {
         return args -> {
             if (password.isBlank()) return;
             if (password.length()<8) throw new IllegalArgumentException("DEMO_PASSWORD must be at least 8 characters");
