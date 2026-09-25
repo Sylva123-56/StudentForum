@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,9 +21,9 @@ class ForumServiceTest {
 
     @BeforeEach void setup() {
         mapper=mock(ForumMapper.class);
-        service=new ForumService(mapper);
+        service=new ForumService(mapper,mock(JdbcTemplate.class));
         author=new UsernamePasswordAuthenticationToken("1",null,List.of());
-        when(mapper.user(1)).thenReturn(Map.of("id",1L,"status","active","role","student"));
+        when(mapper.user(1)).thenReturn(Map.of("id",1L,"status","active","role","student","reputation",100));
     }
 
     @Test void publishAwardsOnceWithinDailyLimit() {
@@ -34,6 +35,19 @@ class ForumServiceTest {
         service.publish(author,Map.of("boardId",2,"type","question","title","一个具体问题","content","我尝试了几种不同的方法来解决问题","tagIds",List.of(3)));
         verify(mapper).postTag(8,3);
         verify(mapper,never()).addPoints(anyLong(),anyInt());
+    }
+
+    @Test void lowReputationCannotPublish() {
+        when(mapper.user(1)).thenReturn(Map.of("id",1L,"status","active","role","student","reputation",39));
+        assertThrows(ResponseStatusException.class,() -> service.publish(author,Map.of()));
+        verify(mapper,never()).insertPost(anyMap());
+    }
+
+    @Test void cannotAcceptOwnAnswerForBounty() {
+        when(mapper.post(5)).thenReturn(Map.of("id",5L,"author_id",1L,"type","question","status","published"));
+        when(mapper.reply(7)).thenReturn(Map.of("id",7L,"post_id",5L,"author_id",1L,"status","published"));
+        assertThrows(ResponseStatusException.class,() -> service.accept(author,5,7));
+        verify(mapper,never()).acceptPost(anyLong(),anyLong());
     }
 
     @Test void answerCannotBeAcceptedTwice() {
@@ -57,6 +71,7 @@ class ForumServiceTest {
         when(mapper.post(5)).thenReturn(Map.of("id",5L,"board_id",3L,"author_id",2L,"status","published","is_featured",false));
         when(mapper.feature(5,true)).thenReturn(1);
         when(mapper.rewardExists(2,"featured","post",5)).thenReturn(1);
+        when(mapper.user(2)).thenReturn(Map.of("id",2L,"reputation",102));
         service.feature(author,5,true);
         verify(mapper,never()).addPoints(anyLong(),anyInt());
     }

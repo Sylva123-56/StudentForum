@@ -6,7 +6,7 @@ import org.apache.ibatis.annotations.*;
 
 @Mapper
 public interface ForumMapper {
-    @Select("SELECT id,email,username,role,status,moderator_board_id,points,school,grade,major,subject_preference,public_school,public_grade,created_at FROM users WHERE id=#{id}") Map<String,Object> user(long id);
+    @Select("SELECT id,email,username,role,status,moderator_board_id,points,reputation,message_privacy,notify_unfollow,notify_mention,school,grade,major,subject_preference,public_school,public_grade,created_at FROM users WHERE id=#{id}") Map<String,Object> user(long id);
     @Select("SELECT id,password_hash,status,role FROM users WHERE email=#{email}") Map<String,Object> credentials(String email);
     @Select("SELECT COUNT(*) FROM users WHERE email=#{email} OR username=#{username}") int userExists(@Param("email") String email,@Param("username") String username);
     @Insert("INSERT INTO users(email,username,password_hash) VALUES(#{email},#{username},#{hash})") @Options(useGeneratedKeys=true,keyProperty="id") void insertUser(Map<String,Object> user);
@@ -31,7 +31,7 @@ public interface ForumMapper {
     @Insert("INSERT INTO replies(post_id,author_id,content,image_path) VALUES(#{postId},#{authorId},#{content},#{imagePath})") @Options(useGeneratedKeys=true,keyProperty="id") void insertReply(Map<String,Object> reply);
     @Update("UPDATE replies SET status='deleted' WHERE id=#{id}") void deleteReply(long id);
     @Update("UPDATE replies SET is_accepted=TRUE WHERE id=#{id}") void acceptReply(long id);
-    @Update("UPDATE posts SET is_solved=TRUE,accepted_reply_id=#{replyId} WHERE id=#{postId} AND accepted_reply_id IS NULL") int acceptPost(@Param("postId") long postId,@Param("replyId") long replyId);
+    @Update("UPDATE posts SET is_solved=TRUE,accepted_reply_id=#{replyId},accepted_at=NOW() WHERE id=#{postId} AND accepted_reply_id IS NULL") int acceptPost(@Param("postId") long postId,@Param("replyId") long replyId);
     @Select("SELECT COUNT(*) FROM replies WHERE post_id=#{postId} AND author_id=#{userId} AND status='published'") int priorReply(@Param("postId") long postId,@Param("userId") long userId);
     @Insert("INSERT IGNORE INTO favorites(user_id,post_id) VALUES(#{userId},#{postId})") void favorite(@Param("userId") long userId,@Param("postId") long postId);
     @Delete("DELETE FROM favorites WHERE user_id=#{userId} AND post_id=#{postId}") void unfavorite(@Param("userId") long userId,@Param("postId") long postId);
@@ -53,7 +53,7 @@ public interface ForumMapper {
     @Select("SELECT * FROM reports WHERE id=#{id}") Map<String,Object> reportById(long id);
     @Select("SELECT r.*,u.username AS reporter_name FROM reports r JOIN users u ON u.id=r.reporter_id ORDER BY (r.status='pending') DESC,r.id DESC LIMIT 100") List<Map<String,Object>> reports();
     @Update("UPDATE reports SET status=#{status},handler_id=#{handler},handle_note=#{note},handled_at=NOW() WHERE id=#{id} AND status='pending'") int handleReport(@Param("id") long id,@Param("status") String status,@Param("handler") long handler,@Param("note") String note);
-    @Update("UPDATE posts SET is_featured=#{featured} WHERE id=#{id} AND is_featured != #{featured}") int feature(@Param("id") long id,@Param("featured") boolean featured);
+    @Update("UPDATE posts SET is_featured=#{featured},featured_at=IF(#{featured},NOW(),NULL) WHERE id=#{id} AND is_featured != #{featured}") int feature(@Param("id") long id,@Param("featured") boolean featured);
     @Update("UPDATE posts SET is_top=#{top} WHERE id=#{id}") void top(@Param("id") long id,@Param("top") boolean top);
     @Update("UPDATE users SET status=#{status} WHERE id=#{id}") void userStatus(@Param("id") long id,@Param("status") String status);
     @Update("UPDATE users SET role=#{role},moderator_board_id=#{boardId} WHERE id=#{id}") void userRole(@Param("id") long id,@Param("role") String role,@Param("boardId") Long boardId);

@@ -22,7 +22,7 @@ public class AdminController {
         service.staff(auth);
         return mapper.reports().stream().filter(report -> {
             String type=String.valueOf(report.get("target_type")); long target=service.number(report,"target_id");
-            if ("user".equals(type)) return "admin".equals(service.current(auth).get("role"));
+            if ("user".equals(type) || "message".equals(type)) return "admin".equals(service.current(auth).get("role"));
             Map<String,Object> post="post".equals(type)?mapper.post(target):mapper.post(service.number(mapper.reply(target),"post_id"));
             return post!=null && allowed(auth,service.number(post,"board_id"));
         }).toList();

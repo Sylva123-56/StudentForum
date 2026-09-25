@@ -1,8 +1,8 @@
-export type User = { id: number; username: string; email: string; role: string; status: string; points: number; school: string; grade: string; major: string; subject_preference: string; public_school: boolean; public_grade: boolean }
+export type User = { id: number; username: string; email: string; role: string; status: string; points: number; reputation: number; message_privacy: string; notify_unfollow: boolean; notify_mention: boolean; school: string; grade: string; major: string; subject_preference: string; public_school: boolean; public_grade: boolean }
 export type Board = { id: number; name: string; slug: string; description: string }
 export type Tag = { id: number; name: string }
-export type Post = { id: number; board_id: number; author_id: number; username: string; board_name: string; title: string; content: string; type: string; image_path?: string; is_solved: boolean; is_featured: boolean; is_top: boolean; view_count: number; reply_count: number; favorite_count: number; created_at: string; tags?: Tag[]; favorited?: boolean; status?: string }
-export type Reply = { id: number; post_id: number; author_id: number; username: string; content: string; image_path?: string; is_accepted: boolean; created_at: string }
+export type Post = { id: number; board_id: number; author_id: number; username: string; board_name: string; title: string; content: string; type: string; image_path?: string; cover_path?: string; attachment_path?: string; is_solved: boolean; is_featured: boolean; is_top: boolean; view_count: number; reply_count: number; favorite_count: number; created_at: string; tags?: Tag[]; favorited?: boolean; status?: string }
+export type Reply = { id: number; post_id: number; author_id: number; username: string; content: string; image_path?: string; quote_content?: string; is_accepted: boolean; created_at: string }
 let csrf = ''
 export async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   if (!csrf || options.method && options.method !== 'GET') { const response = await fetch('/api/csrf', { credentials: 'same-origin' }); if (response.ok) csrf = (await response.json()).token }

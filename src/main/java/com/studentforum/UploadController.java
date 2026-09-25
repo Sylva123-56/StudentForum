@@ -32,6 +32,17 @@ public class UploadController {
         String name=UUID.randomUUID()+"."+extension; Files.write(directory.resolve(name),bytes);
         return Map.of("path","/uploads/"+name);
     }
+    @PostMapping("/api/attachments") Map<String,String> attachment(Authentication auth,@RequestParam MultipartFile file) throws IOException {
+        service.writable(auth);
+        if (file.isEmpty() || file.getSize()>5_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"附件不能超过 5MB");
+        String name=String.valueOf(file.getOriginalFilename()).toLowerCase();
+        String extension=name.endsWith(".pdf")?"pdf":name.endsWith(".txt")?"txt":name.endsWith(".zip")?"zip":null;
+        if (extension==null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"仅支持 PDF、TXT、ZIP");
+        byte[] bytes=file.getBytes();
+        if ("pdf".equals(extension) && !(bytes.length>4 && bytes[0]=='%' && bytes[1]=='P' && bytes[2]=='D' && bytes[3]=='F') || "zip".equals(extension) && !(bytes.length>4 && bytes[0]=='P' && bytes[1]=='K' && bytes[2]==3 && bytes[3]==4)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"附件格式无效");
+        Files.createDirectories(directory); String stored=UUID.randomUUID()+"."+extension; Files.write(directory.resolve(stored),bytes);
+        return Map.of("path","/uploads/"+stored);
+    }
     @Configuration static class UploadResources implements WebMvcConfigurer {
         private final String path;
         UploadResources(@Value("${forum.uploads}") String path) { this.path=path; }

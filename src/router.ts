@@ -5,6 +5,7 @@ import Compose from './views/Compose.vue'
 import Account from './views/Account.vue'
 import Auth from './views/Auth.vue'
 import Admin from './views/Admin.vue'
+import V2Hub from './views/V2Hub.vue'
 import { useSession } from './store'
 const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/', component: Feed }, { path: '/boards', component: Feed }, { path: '/boards/:id', component: Feed }, { path: '/search', component: Feed }, { path: '/featured', component: Feed }, { path: '/tags/:id', component: Feed },
@@ -12,6 +13,10 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/login', component: Auth }, { path: '/register', component: Auth },
   { path: '/me', component: Account, meta: { login: true } }, { path: '/me/notifications', component: Account, meta: { login: true } },
   { path: '/users/:id', component: Account },
+  { path: '/feed/following', component: V2Hub, meta: { login: true } },
+  { path: '/messages', component: V2Hub, meta: { login: true } }, { path: '/messages/:conversationId', component: V2Hub, meta: { login: true } },
+  { path: '/me/drafts', component: V2Hub, meta: { login: true } }, { path: '/me/notifications/settings', component: V2Hub, meta: { login: true } },
+  { path: '/posts/:id/revisions', component: V2Hub }, { path: '/appeals', component: V2Hub, meta: { login: true } },
   { path: '/admin/login', component: Auth }, { path: '/admin/:section?', component: Admin, meta: { login: true } }
 ] })
 router.beforeEach(async to => { const session = useSession(); if (!session.ready) await session.refresh(); if (to.meta.login && !session.user) return { path: '/login', query: { next: to.fullPath } } })

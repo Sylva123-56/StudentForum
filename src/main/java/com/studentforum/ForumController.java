@@ -47,7 +47,6 @@ public class ForumController {
     @PostMapping("/auth/login") @Transactional Map<String,Object> login(@RequestBody Map<String,String> input,HttpServletRequest request,HttpServletResponse response) {
         Map<String,Object> found=mapper.credentials(input.getOrDefault("email","").trim().toLowerCase());
         if (found==null || !encoder.matches(input.getOrDefault("password",""),String.valueOf(found.get("password_hash")))) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"邮箱或密码错误");
-        if ("banned".equals(found.get("status"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"账号已封禁");
         long id=service.number(found,"id"); mapper.login(id); service.reward(id,"login",1,"user",id,1);
         signIn(id,String.valueOf(found.get("role")),request,response); return mapper.user(id);
     }
@@ -84,19 +83,20 @@ public class ForumController {
         return post;
     }
     @PostMapping("/posts") Map<String,Object> publish(Authentication auth,@RequestBody Map<String,Object> input) { return service.publish(auth,input); }
-    @PatchMapping("/posts/{id}") void edit(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+    @PatchMapping("/posts/{id}") @Transactional void edit(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
         Map<String,Object> post=service.require(mapper.post(id));
         if (service.number(post,"author_id")!=service.id(auth) || !"published".equals(post.get("status"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         service.text(input.get("title"),5,160); service.text(input.get("content"),10,10000); mapper.editPost(id,input.get("title").trim(),input.get("content").trim());
+        service.revision(auth,id,input.get("title").trim(),input.get("content").trim());
     }
     @DeleteMapping("/posts/{id}") void delete(Authentication auth,@PathVariable long id) {
         Map<String,Object> post=service.require(mapper.post(id));
         if (service.number(post,"author_id")!=service.id(auth)) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
         mapper.postStatus(id,"deleted");
     }
-    @GetMapping("/posts/{id}/replies") List<Map<String,Object>> replies(@PathVariable long id) {
+    @GetMapping("/posts/{id}/replies") List<Map<String,Object>> replies(@PathVariable long id,@RequestParam(defaultValue="earliest") String sort) {
         if (!"published".equals(service.require(mapper.post(id)).get("status"))) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        return mapper.replies(id);
+        return service.sortedReplies(id,sort);
     }
     @PostMapping("/posts/{id}/replies") Map<String,Object> reply(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) { return service.reply(auth,id,input); }
     @DeleteMapping("/replies/{id}") void deleteReply(Authentication auth,@PathVariable long id) {
