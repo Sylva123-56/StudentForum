@@ -1,0 +1,9 @@
+node_modules/
+.idea/
+dist/
+target/
+.env
+uploads/
+.m2/
+.npm-cache/
+*.tsbuildinfo
