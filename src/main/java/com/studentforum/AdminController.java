@@ -67,11 +67,23 @@ public class AdminController {
         if (description.length()>255) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块简介不能超过 255 个字");
         mapper.addBoard(name,slug,description,((Number)input.getOrDefault("sortOrder",0)).intValue()); mapper.adminLog(service.id(auth),"create","board",0,name);
     }
+    @DeleteMapping("/boards/{id}") void deleteBoard(Authentication auth,@PathVariable long id) {
+        service.admin(auth); Map<String,Object> board=service.require(mapper.adminBoard(id));
+        if (!"enabled".equals(board.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块已经停用");
+        if (mapper.disableBoard(id)==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块状态已发生变化");
+        mapper.adminLog(service.id(auth),"disable","board",id,String.valueOf(board.get("name")));
+    }
     @PostMapping("/tags") void tag(Authentication auth,@RequestBody Map<String,String> input) {
         service.admin(auth); String name=input.getOrDefault("name","").trim();
         if (name.length()<2) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签名称至少需要 2 个字");
         if (name.length()>40) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签名称不能超过 40 个字");
         mapper.addTag(name); mapper.adminLog(service.id(auth),"create","tag",0,name);
+    }
+    @DeleteMapping("/tags/{id}") void deleteTag(Authentication auth,@PathVariable long id) {
+        service.admin(auth); Map<String,Object> tag=service.require(mapper.adminTag(id));
+        if (!"enabled".equals(tag.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签已经停用");
+        if (mapper.disableTag(id)==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签状态已发生变化");
+        mapper.adminLog(service.id(auth),"disable","tag",id,String.valueOf(tag.get("name")));
     }
     @PostMapping("/announcements") void announcement(Authentication auth,@RequestBody Map<String,String> input) {
         service.admin(auth); String message=input.getOrDefault("message","").trim();

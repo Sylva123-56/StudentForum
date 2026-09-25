@@ -64,7 +64,11 @@ public interface ForumMapper {
     @Insert("INSERT INTO admin_logs(actor_id,action,target_type,target_id,detail) VALUES(#{actor},#{action},#{type},#{target},#{detail})") void adminLog(@Param("actor") long actor,@Param("action") String action,@Param("type") String type,@Param("target") long target,@Param("detail") String detail);
     @Select("SELECT * FROM admin_logs ORDER BY id DESC LIMIT 100") List<Map<String,Object>> adminLogs();
     @Insert("INSERT INTO boards(name,slug,description,sort_order) VALUES(#{name},#{slug},#{description},#{sortOrder})") void addBoard(@Param("name") String name,@Param("slug") String slug,@Param("description") String description,@Param("sortOrder") int sortOrder);
+    @Select("SELECT id,name,status FROM boards WHERE id=#{id}") Map<String,Object> adminBoard(long id);
+    @Update("UPDATE boards SET status='disabled' WHERE id=#{id} AND status='enabled'") int disableBoard(long id);
     @Insert("INSERT INTO tags(name) VALUES(#{name})") void addTag(String name);
+    @Select("SELECT id,name,status FROM tags WHERE id=#{id}") Map<String,Object> adminTag(long id);
+    @Update("UPDATE tags SET status='disabled' WHERE id=#{id} AND status='enabled'") int disableTag(long id);
     @Select("SELECT id,username,points,school,grade,public_school,public_grade FROM users WHERE id=#{id}") Map<String,Object> publicUser(long id);
     @Select("SELECT COUNT(*) FROM users WHERE email=#{email}") int emailExists(String email);
     @Insert("INSERT INTO users(email,username,password_hash,role,moderator_board_id,points) VALUES(#{email},#{username},#{hash},#{role},#{boardId},5)") void demoUser(@Param("email") String email,@Param("username") String username,@Param("hash") String hash,@Param("role") String role,@Param("boardId") Long boardId);
