@@ -1004,7 +1004,7 @@ footer span {
     font-size: 24px
 }
 
-.profile-summary strong, .profile-summary span, .profile-hero span {
+.profile-summary strong, .profile-summary > div > span, .profile-hero > div > span {
     display: block
 }
 
