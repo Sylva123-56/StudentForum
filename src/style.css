@@ -876,7 +876,7 @@ footer span {
     padding: 15px 0
 }
 
-.article-actions button, .reply-actions button {
+.article-actions button, .article-actions a, .reply-actions button {
     background: none;
     border: 0;
     color: #7a918a;
@@ -887,7 +887,7 @@ footer span {
     padding: 2px
 }
 
-.article-actions button:hover, .reply-actions button:hover {
+.article-actions button:hover, .article-actions a:hover, .reply-actions button:hover {
     color: #0b7771
 }
 
@@ -1405,6 +1405,14 @@ footer span {
 .v2-chat article span { color: #61757a; font-size: 12px; }
 .v2-chat article img { max-width: 260px; display: block; }
 .v2-record { padding: 18px; border-bottom: 1px solid #e3e9e7; white-space: pre-wrap; }
+.appeal-form { margin: 22px 0; padding: 24px; border: 1px solid #dce7e2; border-radius: 8px; background: #f6faf8; }
+.appeal-form h2 { margin: 0 0 8px; }
+.appeal-form p, .appeal-hint { color: #617772; font-size: 13px; }
+.appeal-form select, .appeal-form textarea { max-width: 100%; }
+.appeal-list-title { margin-top: 30px; }
+.appeal-review { display: grid; gap: 8px; margin-top: 16px; }
+.appeal-review textarea { width: 100%; padding: 11px 12px; border: 1px solid #dce7e2; border-radius: 5px; resize: vertical; }
+.appeal-review .v2-inline { margin: 4px 0 0; }
 .v2-draft { display: flex; align-items: center; justify-content: space-between; }
 .v2-vote { display: grid; gap: 12px; margin: 20px 0; padding: 20px; border: 1px solid #d9e4e0; border-radius: 12px; }
 .v2-vote label { cursor: pointer; }

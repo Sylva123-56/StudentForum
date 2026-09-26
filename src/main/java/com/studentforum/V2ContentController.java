@@ -238,6 +238,39 @@ public class V2ContentController {
         return Map.of("score", service.current(auth).get("reputation"), "logs", db.queryForList("SELECT * FROM reputation_logs WHERE user_id=? ORDER BY id DESC LIMIT 100", id(auth)));
     }
 
+    @GetMapping("/me/appeal-targets")
+    List<Map<String, Object>> appealTargets(Authentication auth) {
+        return db.queryForList("""
+            SELECT candidates.target_type, candidates.target_id, candidates.label
+            FROM (
+                SELECT 'post' AS target_type, p.id AS target_id, p.title AS label
+                FROM posts p
+                WHERE p.author_id=? AND p.status IN ('hidden','deleted')
+                  AND EXISTS (SELECT 1 FROM admin_logs l WHERE l.target_type='post' AND l.target_id=p.id AND l.action IN ('status','report_hide','report_delete'))
+                UNION ALL
+                SELECT 'reply', r.id, CONCAT('回复 · ', LEFT(r.content, 60))
+                FROM replies r
+                WHERE r.author_id=? AND r.status='deleted'
+                  AND EXISTS (SELECT 1 FROM admin_logs l WHERE l.target_type='reply' AND l.target_id=r.id AND l.action='report_delete')
+                UNION ALL
+                SELECT 'user', u.id, CONCAT('我的账号 · ', u.username)
+                FROM users u WHERE u.id=? AND u.status<>'active'
+                UNION ALL
+                SELECT 'report', rep.id, CONCAT('举报处理 · ', rep.target_type, ' #', rep.target_id, ' · ', rep.reason)
+                FROM reports rep
+                LEFT JOIN posts p ON rep.target_type='post' AND rep.target_id=p.id
+                LEFT JOIN replies r ON rep.target_type='reply' AND rep.target_id=r.id
+                WHERE rep.status='resolved' AND (rep.target_type='user' AND rep.target_id=? OR p.author_id=? OR r.author_id=?)
+                UNION ALL
+                SELECT 'message', m.id, CONCAT('私信 · ', DATE_FORMAT(m.created_at, '%Y-%m-%d %H:%i'))
+                FROM messages m WHERE m.sender_id=? AND m.content='[已删除]'
+            ) candidates
+            WHERE NOT EXISTS (SELECT 1 FROM appeals a WHERE a.user_id=? AND a.target_type=candidates.target_type AND a.target_id=candidates.target_id AND a.status='pending')
+            ORDER BY candidates.target_type, candidates.target_id DESC
+            LIMIT 200
+            """, id(auth), id(auth), id(auth), id(auth), id(auth), id(auth), id(auth), id(auth));
+    }
+
     @PostMapping("/appeals")
     @Transactional
     void appeal(Authentication auth, @RequestBody Map<String, Object> input) {
