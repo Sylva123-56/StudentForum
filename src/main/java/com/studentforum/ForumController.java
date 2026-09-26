@@ -143,7 +143,7 @@ public class ForumController {
     List<Map<String, Object>> search(@RequestParam(required = false) String q, @RequestParam(required = false) Long board, @RequestParam(required = false) Long tag, @RequestParam(required = false) String type, @RequestParam(required = false) Boolean solved, @RequestParam(required = false) Boolean featured, @RequestParam(defaultValue = "latest") String sort, @RequestParam(defaultValue = "1") int page) {
         if (page < 1 || page > 10000 || q != null && q.length() > 100 || type != null && !Set.of("question", "discussion", "experience").contains(type))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "搜索条件无效");
-        return mapper.posts(board, tag, type, solved, featured, q == null || q.isBlank() ? null : q, "hot".equals(sort) ? "hot" : "latest", 20, (page - 1) * 20);
+        return mapper.posts(board, tag, type, solved, featured, q == null || q.isBlank() ? null : q.trim(), "hot".equals(sort) ? "hot" : "latest", 21, (page - 1) * 20);
     }
 
     @GetMapping("/posts/{id}")
@@ -226,9 +226,11 @@ public class ForumController {
     }
 
     @GetMapping("/notifications")
-    Map<String, Object> notifications(Authentication auth) {
+    Map<String, Object> notifications(Authentication auth, @RequestParam(defaultValue = "1") int page) {
+        if (page < 1 || page > 10000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "页码无效");
         long id = service.id(auth);
-        return Map.of("items", mapper.notifications(id), "unread", mapper.unread(id));
+        List<Map<String, Object>> results = mapper.notifications(id, 21, (page - 1) * 20);
+        return Map.of("items", results.subList(0, Math.min(20, results.size())), "hasNext", results.size() > 20, "unread", mapper.unread(id));
     }
 
     @PatchMapping("/notifications/{id}/read")

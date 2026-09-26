@@ -18,6 +18,7 @@ const route = useRoute(), session = useSession(),
     notificationError = ref(''), saved = ref(''), social = ref<any>({}), following = ref<any[]>([]),
     followers = ref<any[]>([]), reputationLogs = ref<any[]>([])
 const mine = computed(() => !route.params.id)
+const notificationPage = ref(1), notificationHasNext = ref(false)
 const profile = ref({school: '', grade: '', major: '', subjectPreference: '', publicSchool: false, publicGrade: false})
 onMounted(async () => {
   if (!mine.value) {
@@ -42,18 +43,23 @@ onMounted(async () => {
 })
 watch(() => route.path, path => {
   tab.value = path.includes('notifications') ? 'notifications' : 'profile';
-  if (tab.value === 'notifications') reloadNotifications()
+  if (tab.value === 'notifications') { notificationPage.value = 1; reloadNotifications() }
 })
 
 async function reloadNotifications() {
   try {
-    const result = await api<{ items: Notification[], unread: number }>('/notifications');
+    const result = await api<{ items: Notification[], unread: number, hasNext: boolean }>('/notifications?page=' + notificationPage.value);
     notifications.value = result.items;
+    notificationHasNext.value = result.hasNext;
     session.unread = result.unread;
     notificationError.value = ''
   } catch (exception) {
     notificationError.value = (exception as Error).message
   }
+}
+function changeNotificationPage(page: number) {
+  notificationPage.value = page;
+  reloadNotifications()
 }
 
 async function readNotification(item: Notification) {
@@ -150,6 +156,11 @@ async function readAll() {
       <div class="page-heading"><span>个人空间</span>
         <h1>你好，{{ session.user.username }}</h1>
         <p>记录你的学习足迹，管理你关注的讨论。</p></div>
+      <div v-if="session.user.status === 'muted'" class="profile-mute-notice" role="status">
+        <strong>账号已被禁言</strong>
+        <p>目前无法发布内容或发送私信。如认为处理有误，可以提交申诉。</p>
+        <RouterLink to="/appeals">前往申诉</RouterLink>
+      </div>
       <div class="profile-summary"><span class="profile-avatar">{{ session.user.username[0] }}</span>
         <div><strong>{{
             session.user.username
@@ -167,11 +178,14 @@ async function readAll() {
         <RouterLink to="/appeals">申诉</RouterLink>
         <RouterLink to="/me/notifications/settings">通知设置</RouterLink>
       </div>
-      <div class="tabs">
-        <button
-            v-for="item in [{id:'profile',name:'个人资料'},{id:'favorites',name:'我的收藏'},{id:'notifications',name:'通知'},{id:'points',name:'积分明细'},{id:'following',name:'我的关注'},{id:'followers',name:'我的粉丝'},{id:'reputation',name:'信誉记录'}]"
-            :key="item.id" :class="{active:tab===item.id}" @click="tab=item.id">{{ item.name }}<span
-            v-if="item.id==='notifications' && session.unread"> {{ session.unread }}</span></button>
+      <div class="account-tabs-row">
+        <div class="tabs">
+          <button
+              v-for="item in [{id:'profile',name:'个人资料'},{id:'favorites',name:'我的收藏'},{id:'notifications',name:'通知'},{id:'points',name:'积分明细'},{id:'following',name:'我的关注'},{id:'followers',name:'我的粉丝'},{id:'reputation',name:'信誉记录'}]"
+              :key="item.id" :class="{active:tab===item.id}" @click="tab=item.id">{{ item.name }}<span
+              v-if="item.id==='notifications' && session.unread"> {{ session.unread }}</span></button>
+        </div>
+        <button v-if="tab==='notifications' && notifications.length" class="mark-all-read" type="button" @click="readAll">全部标记已读</button>
       </div>
       <form v-if="tab==='profile'" class="profile-form" @submit.prevent="save">
         <div class="form-row"><label>学校<input v-model="profile.school" maxlength="100"
@@ -191,11 +205,10 @@ async function readAll() {
           }}</strong><span>{{ item.board_name }} · {{ date(item.created_at) }}</span></RouterLink>
       </div>
       <div v-if="tab==='notifications'" class="account-list">
-        <button v-if="notifications.length" class="subtle-action" @click="readAll">全部标记已读</button>
         <p v-if="notificationError" class="error">通知加载失败：{{ notificationError }}
           <button type="button" @click="reloadNotifications">重试</button>
         </p>
-        <div v-else-if="!notifications.length" class="empty">暂时没有新消息。</div>
+        <div v-else-if="!notifications.length" class="empty">{{ notificationPage > 1 ? '本页没有通知，请返回上一页。' : '暂时没有新消息。' }}</div>
         <article v-for="item in notifications" :key="item.id" class="notification-item" :class="{unread:!item.is_read}">
           <div><span class="notification-kind">{{ notificationKind(item.kind) }}</span><span class="notification-date">{{
               date(item.created_at)
@@ -207,6 +220,11 @@ async function readAll() {
             <button v-if="!item.is_read" type="button" @click="readNotification(item)">标记已读</button>
           </div>
         </article>
+        <nav v-if="!notificationError && (notificationPage > 1 || notificationHasNext)" class="pager" aria-label="通知分页">
+          <button :disabled="notificationPage === 1" @click="changeNotificationPage(notificationPage - 1)">上一页</button>
+          <span>第 {{ notificationPage }} 页</span>
+          <button :disabled="!notificationHasNext" @click="changeNotificationPage(notificationPage + 1)">下一页</button>
+        </nav>
       </div>
       <div v-if="tab==='reputation'" class="account-list">
         <article v-for="item in reputationLogs" :key="item.id" class="v2-record">{{

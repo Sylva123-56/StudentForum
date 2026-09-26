@@ -321,7 +321,10 @@ public class V2ContentController {
         check(Set.of("resolved", "rejected").contains(status) && !note.isBlank(), "处理结果及备注不能为空");
         Map<String, Object> appeal = required("SELECT * FROM appeals WHERE id=?", appealId);
         check(db.update("UPDATE appeals SET status=?,handle_note=?,handler_id=?,handled_at=NOW() WHERE id=? AND status='pending'", status, note, id(auth), appealId) == 1, "申诉已处理");
-        String message = "申诉已" + ("resolved".equals(status) ? "处理" : "驳回") + "：" + note;
+        boolean restoreAccount = "resolved".equals(status) && "user".equals(appeal.get("target_type"));
+        if (restoreAccount)
+            db.update("UPDATE users SET status='active' WHERE id=? AND status IN ('muted','banned')", service.number(appeal, "target_id"));
+        String message = "申诉已" + (restoreAccount ? "通过，账号已恢复" : "resolved".equals(status) ? "处理" : "驳回") + "：" + note;
         mapper.notifyUser(service.number(appeal, "user_id"), "appeal", message.substring(0, Math.min(255, message.length())), null);
         mapper.adminLog(id(auth), "appeal_" + status, "appeal", appealId, note);
     }

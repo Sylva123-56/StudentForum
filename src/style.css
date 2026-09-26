@@ -646,6 +646,10 @@ footer span {
     background: none;
     color: #0b7771
 }
+.pager button:disabled { color: #9aaba4; cursor: not-allowed; }
+.title-search { display: flex; gap: 10px; margin-bottom: 16px; }
+.title-search input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid #dce7e2; border-radius: 5px; }
+.title-search button { flex: none; }
 
 .content-page, .detail-page, .admin-page {
     max-width: 940px
@@ -998,6 +1002,27 @@ footer span {
     margin-bottom: 26px
 }
 
+.profile-mute-notice {
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    border: 1px solid #ebcfaa;
+    border-radius: 7px;
+    background: #fff8ec;
+    color: #80572c
+}
+
+.profile-mute-notice p {
+    margin: 8px 0;
+    font-size: 13px
+}
+
+.profile-mute-notice a {
+    color: #96601c;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: underline
+}
+
 .profile-avatar {
     width: 58px;
     height: 58px;
@@ -1057,6 +1082,36 @@ footer span {
     font-weight: 700
 }
 
+.account-tabs-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border-bottom: 1px solid #e2eae5;
+    margin-bottom: 25px
+}
+
+.account-tabs-row .tabs {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+    border-bottom: 0
+}
+
+.mark-all-read {
+    flex: none;
+    padding: 8px 12px;
+    border: 1px solid #b7d6ca;
+    border-radius: 5px;
+    background: #f4faf7;
+    color: #0b7771;
+    font-size: 12px;
+    white-space: nowrap
+}
+
+.mark-all-read:hover {
+    background: #e6f3ed
+}
+
 .profile-form {
     border: 0;
     padding: 8px 0;
@@ -1101,14 +1156,6 @@ footer span {
 
 .log-row strong {
     color: #168169
-}
-
-.subtle-action {
-    float: right;
-    background: none;
-    border: 0;
-    color: #0b7771;
-    margin-bottom: 15px
 }
 
 .admin-page {

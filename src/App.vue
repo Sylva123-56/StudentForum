@@ -38,7 +38,7 @@ async function logout() {
         </nav>
         <form class="header-search" @submit.prevent="search">
           <Search :size="18"/>
-          <input v-model="query" placeholder="搜索问题、经验或标签" aria-label="搜索"/></form>
+          <input v-model="query" placeholder="搜索帖子标题" aria-label="搜索帖子标题"/></form>
         <div class="header-actions">
           <RouterLink v-if="session.user" to="/me/notifications" class="icon-link" title="通知">
             <Bell :size="20"/>
@@ -65,7 +65,7 @@ async function logout() {
       <RouterLink to="/featured" @click="menu=false">精华</RouterLink>
       <RouterLink to="/posts/new" @click="menu=false">发布帖子</RouterLink>
       <RouterLink v-if="session.user" to="/me" @click="menu=false">个人中心</RouterLink>
-      <form @submit.prevent="search"><input v-model="query" placeholder="搜索内容"/>
+      <form @submit.prevent="search"><input v-model="query" placeholder="搜索帖子标题"/>
         <button>搜索</button>
       </form>
     </div>
