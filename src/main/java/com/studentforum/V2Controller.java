@@ -133,6 +133,25 @@ public class V2Controller {
         return db.queryForList("SELECT c.id,c.updated_at,u.id other_id,u.username,COALESCE(s.muted,FALSE) muted,(SELECT content FROM messages WHERE conversation_id=c.id ORDER BY id DESC LIMIT 1) last_message,(SELECT COUNT(*) FROM messages WHERE conversation_id=c.id AND sender_id<>? AND is_read=FALSE) unread FROM conversations c JOIN users u ON u.id=IF(c.user_a_id=?,c.user_b_id,c.user_a_id) LEFT JOIN conversation_settings s ON s.conversation_id=c.id AND s.user_id=? WHERE c.user_a_id=? OR c.user_b_id=? ORDER BY c.updated_at DESC LIMIT 100", id(auth), id(auth), id(auth), id(auth), id(auth));
     }
 
+    @GetMapping("/me/message-recipients")
+    List<Map<String, Object>> messageRecipients(Authentication auth, @RequestParam String keyword) {
+        String name = keyword.trim();
+        check(name.length() >= 1 && name.length() <= 40, "请输入 1 至 40 个字的用户名");
+        long me = id(auth);
+        return db.queryForList("""
+            SELECT u.id,u.username,
+              CASE WHEN u.status<>'active' THEN '账号暂不能接收私信'
+                   WHEN EXISTS (SELECT 1 FROM user_blocks b WHERE (b.user_id=? AND b.blocked_id=u.id) OR (b.user_id=u.id AND b.blocked_id=?)) THEN '双方存在拉黑关系'
+                   WHEN u.message_privacy='closed' THEN '对方关闭了私信'
+                   WHEN u.message_privacy='following' AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.follower_id=u.id AND f.followee_id=?) THEN '对方仅接收关注者私信'
+                   ELSE NULL END AS unavailable_reason
+            FROM users u
+            WHERE u.id<>? AND LOCATE(LOWER(?),LOWER(u.username))>0
+            ORDER BY CASE WHEN LOWER(u.username)=LOWER(?) THEN 0 WHEN LOCATE(LOWER(?),LOWER(u.username))=1 THEN 1 ELSE 2 END,u.username
+            LIMIT 20
+            """, me, me, me, me, name, name, name);
+    }
+
     @PostMapping("/conversations")
     @Transactional
     Map<String, Object> conversation(Authentication auth, @RequestBody Map<String, Object> input) {
