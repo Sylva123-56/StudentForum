@@ -58,6 +58,51 @@ class AdminControllerTest {
         verify(mapper, never()).editTag(anyLong(), anyString());
     }
 
+    @SuppressWarnings("unchecked")
+    @Test void pagesUsersWithFuzzyNicknameSearch() {
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (int index = 0; index < 21; index++) rows.add(Map.of("id", (long) index));
+        when(mapper.users("小明", 21, 20)).thenReturn(rows);
+
+        Map<String, Object> result = controller.users(admin, "  小明  ", 2);
+
+        assertEquals(true, result.get("hasNext"));
+        assertEquals(20, ((List<Map<String, Object>>) result.get("items")).size());
+    }
+
+    @Test void blankKeywordBecomesNull() {
+        when(mapper.adminTags(isNull(), eq(21), eq(0))).thenReturn(List.of(Map.of("id", 1L)));
+
+        Map<String, Object> result = controller.tagList(admin, "   ", 1);
+
+        assertEquals(false, result.get("hasNext"));
+        verify(mapper).adminTags(null, 21, 0);
+    }
+
+    @Test void rejectsInvalidPage() {
+        assertThrows(ResponseStatusException.class, () -> controller.pointLogs(admin, null, 0));
+        verify(mapper, never()).adminLogs(any(), anyInt(), anyInt());
+    }
+
+    @Test void moderatorPostsAreLimitedToOwnBoard() {
+        when(mapper.user(1)).thenReturn(Map.of("id", 1L, "role", "moderator", "status", "active", "moderator_board_id", 3L));
+        when(mapper.adminPosts(isNull(), eq(List.of(3L)), eq(21), eq(0))).thenReturn(List.of(Map.of("id", 7L)));
+
+        controller.posts(admin, null, 1);
+
+        verify(mapper).adminPosts(null, List.of(3L), 21, 0);
+    }
+
+    @Test void moderatorReportsAreFilteredBeforePagination() {
+        when(mapper.user(1)).thenReturn(Map.of("id", 1L, "role", "moderator", "status", "active", "moderator_board_id", 3L));
+        when(mapper.reports("垃圾", 3L, 21, 20)).thenReturn(List.of(Map.of("id", 7L)));
+
+        Map<String, Object> result = controller.reports(admin, " 垃圾 ", 2);
+
+        assertEquals(false, result.get("hasNext"));
+        verify(mapper).reports("垃圾", 3L, 21, 20);
+    }
+
     @Test void assignsModeratorBoard() {
         when(mapper.board(3)).thenReturn(Map.of("id", 3L, "name", "学习经验"));
         when(mapper.user(6)).thenReturn(Map.of("id", 6L, "role", "student", "status", "active"));

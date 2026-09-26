@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bookmark, Flag, CheckCircle2, MessageCircle, ArrowLeft } from 'lucide-vue-next'
-import { api, date, send, upload, type Post, type Reply } from '../api'
+import { api, date, roleBadge, send, upload, type Post, type Reply } from '../api'
 import { useSession } from '../store'
 import RichContent from './RichContent.vue'
 const route = useRoute(), router = useRouter(), session = useSession(), post = ref<Post>(), replies = ref<Reply[]>([]), content = ref(''), image = ref(''), error = ref(''), editing = ref(false), title = ref(''), body = ref(''), vote = ref<any>(), bounty = ref<any>(), chosen = ref<number[]>([]), replySort = ref('earliest'), quoteId = ref<number>(), editReplyId = ref<number>(), replyBody = ref(''), replyHistory = ref<any[]>([])
@@ -31,7 +31,9 @@ async function remove() { if (confirm('确定删除这篇帖子？')) { await se
                     class="mini-badge featured">精华</span></div>
             <h1>{{ post.title }}</h1>
             <div class="post-meta"><span class="mini-avatar">{{ post.username?.slice(0, 1) }}</span>
-                <RouterLink :to="'/users/' + post.author_id">{{ post.username }}</RouterLink><span>{{ post.board_name
+                <RouterLink :to="'/users/' + post.author_id">{{ post.username }}</RouterLink><span
+                    v-if="roleBadge(post.author_role, post.author_board_name)" class="role-badge"
+                    :class="post.author_role">{{ roleBadge(post.author_role, post.author_board_name) }}</span><span>{{ post.board_name
                     }}</span><span>{{ date(post.created_at) }}</span><span>{{ post.view_count }} 次浏览</span>
             </div>
         </div>
@@ -81,7 +83,9 @@ async function remove() { if (confirm('确定删除这篇帖子？')) { await se
                 <div class="reply-avatar">{{ item.username?.slice(0, 1) }}</div>
                 <div class="reply-content">
                     <div class="reply-heading">
-                        <RouterLink :to="'/users/' + item.author_id">{{ item.username }}</RouterLink><span>{{
+                        <RouterLink :to="'/users/' + item.author_id">{{ item.username }}</RouterLink><span
+                            v-if="roleBadge(item.author_role, item.author_board_name)" class="role-badge"
+                            :class="item.author_role">{{ roleBadge(item.author_role, item.author_board_name) }}</span><span>{{
                             date(item.created_at) }}</span><span v-if="item.is_accepted" class="accepted-label">
                             <CheckCircle2 :size="16" /> 最佳答案
                         </span>

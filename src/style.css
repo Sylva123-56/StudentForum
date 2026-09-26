@@ -944,6 +944,34 @@ footer span {
     font-weight: 650
 }
 
+.role-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #eaf2f0;
+    color: #438074;
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+    vertical-align: middle
+}
+
+.role-badge.admin {
+    background: #fbe7e4;
+    color: #a4453f
+}
+
+.role-badge.moderator {
+    background: #e3f0ea;
+    color: #14766a
+}
+
+.profile-hero h1 .role-badge, .profile-summary strong .role-badge {
+    font-size: 12px
+}
+
 .reply-content p {
     font-size: 14px;
     line-height: 1.8;
@@ -1216,7 +1244,8 @@ footer span {
 }
 
 .admin-list strong {
-    min-width: 140px
+    min-width: 140px;
+    font-size: 15px
 }
 
 .admin-list strong small {
@@ -1224,6 +1253,15 @@ footer span {
     margin-left: 6px;
     color: #b06a3a;
     font-weight: 400
+}
+
+.admin-list small, .admin-list span {
+    font-size: 13px
+}
+
+.admin-list .table-action {
+    font-size: 13px;
+    padding: 7px 13px
 }
 
 .admin-row-actions {
@@ -1293,6 +1331,31 @@ footer span {
 
 .admin-form-hint {
     margin: 0 0 16px;
+    color: #617772;
+    font-size: 13px
+}
+
+.admin-search {
+    display: flex;
+    gap: 10px;
+    margin: 0 0 12px
+}
+
+.admin-search input {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid #dce7e2;
+    border-radius: 5px;
+    background: #fff
+}
+
+.admin-search button {
+    flex: none
+}
+
+.admin-search-hint {
+    margin: 0 0 14px;
     color: #617772;
     font-size: 13px
 }

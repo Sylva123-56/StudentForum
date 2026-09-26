@@ -16,20 +16,34 @@ public class AdminController {
     private final ForumService service;
     AdminController(ForumMapper mapper,ForumService service) { this.mapper=mapper; this.service=service; }
     @GetMapping("/dashboard") Map<String,Object> dashboard(Authentication auth) { service.staff(auth); return mapper.dashboard(); }
-    @GetMapping("/users") List<Map<String,Object>> users(Authentication auth) { service.admin(auth); return mapper.users(); }
-    @GetMapping("/posts") List<Map<String,Object>> posts(Authentication auth) { service.staff(auth); return mapper.adminPosts().stream().filter(post -> allowed(auth,service.number(post,"board_id"))).toList(); }
-    @GetMapping("/reports") List<Map<String,Object>> reports(Authentication auth) {
-        service.staff(auth);
-        return mapper.reports().stream().filter(report -> {
-            String type=String.valueOf(report.get("target_type")); long target=service.number(report,"target_id");
-            if ("user".equals(type) || "message".equals(type)) return "admin".equals(service.current(auth).get("role"));
-            Map<String,Object> post="post".equals(type)?mapper.post(target):mapper.post(service.number(mapper.reply(target),"post_id"));
-            return post!=null && allowed(auth,service.number(post,"board_id"));
-        }).toList();
+    private String keyword(String keyword) {
+        String value=keyword==null?"":keyword.trim();
+        if (value.length()>60) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"搜索关键词不能超过 60 个字");
+        return value.isEmpty()?null:value;
     }
-    private boolean allowed(Authentication auth,long board) {
+    private int offset(int page) {
+        if (page<1 || page>10000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"页码无效");
+        return (page-1)*PAGE_SIZE;
+    }
+    private Map<String,Object> paged(List<Map<String,Object>> rows) {
+        boolean hasNext=rows.size()>PAGE_SIZE;
+        return Map.of("items",hasNext?rows.subList(0,PAGE_SIZE):rows,"hasNext",hasNext);
+    }
+    private static final int PAGE_SIZE=20;
+    @GetMapping("/users") Map<String,Object> users(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+        service.admin(auth); return paged(mapper.users(keyword(keyword),PAGE_SIZE+1,offset(page)));
+    }
+    @GetMapping("/posts") Map<String,Object> posts(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+        service.staff(auth);
         Map<String,Object> user=service.current(auth);
-        return "admin".equals(user.get("role")) || user.get("moderator_board_id")!=null && service.number(user,"moderator_board_id")==board;
+        List<Long> boards="admin".equals(user.get("role"))?null:List.of(user.get("moderator_board_id")==null?-1L:service.number(user,"moderator_board_id"));
+        return paged(mapper.adminPosts(keyword(keyword),boards,PAGE_SIZE+1,offset(page)));
+    }
+    @GetMapping("/reports") Map<String,Object> reports(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+        service.staff(auth);
+        Map<String,Object> user=service.current(auth);
+        Long boardId="admin".equals(user.get("role"))?null:user.get("moderator_board_id")==null?-1L:service.number(user,"moderator_board_id");
+        return paged(mapper.reports(keyword(keyword),boardId,PAGE_SIZE+1,offset(page)));
     }
     @PatchMapping("/posts/{id}/feature") void feature(Authentication auth,@PathVariable long id,@RequestBody Map<String,Boolean> input) { service.feature(auth,id,Boolean.TRUE.equals(input.get("featured"))); }
     @PatchMapping("/posts/{id}/top") void top(Authentication auth,@PathVariable long id,@RequestBody Map<String,Boolean> input) {
@@ -66,9 +80,15 @@ public class AdminController {
         int before=mapper.points(id); mapper.addPoints(id,amount); int after=mapper.points(id);
         mapper.pointLog(id,"adjust",after-before,after,"user",id); mapper.adminLog(service.id(auth),"points","user",id,String.valueOf(amount));
     }
-    @GetMapping("/points") List<Map<String,Object>> pointLogs(Authentication auth) { service.admin(auth); return mapper.adminLogs(); }
-    @GetMapping("/boards") List<Map<String,Object>> boardList(Authentication auth) { service.admin(auth); return mapper.adminBoards(); }
-    @GetMapping("/tags") List<Map<String,Object>> tagList(Authentication auth) { service.admin(auth); return mapper.adminTags(); }
+    @GetMapping("/points") Map<String,Object> pointLogs(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+        service.admin(auth); return paged(mapper.adminLogs(keyword(keyword),PAGE_SIZE+1,offset(page)));
+    }
+    @GetMapping("/boards") Map<String,Object> boardList(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+        service.admin(auth); return paged(mapper.adminBoards(keyword(keyword),PAGE_SIZE+1,offset(page)));
+    }
+    @GetMapping("/tags") Map<String,Object> tagList(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+        service.admin(auth); return paged(mapper.adminTags(keyword(keyword),PAGE_SIZE+1,offset(page)));
+    }
     private String boardName(Map<String,Object> input) {
         String name=String.valueOf(input.getOrDefault("name","")).trim();
         if (name.length()<2) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块名称至少需要 2 个字");

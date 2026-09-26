@@ -53,6 +53,22 @@ public class V2ContentController {
         if (!allowed) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 
+    private String searchKeyword(String keyword) {
+        String value = keyword == null ? "" : keyword.trim();
+        check(value.length() <= 60, "搜索关键词不能超过 60 个字");
+        return value.isEmpty() ? null : value;
+    }
+
+    private int pageOffset(int page) {
+        check(page >= 1 && page <= 10000, "页码无效");
+        return (page - 1) * 20;
+    }
+
+    private Map<String, Object> page(List<Map<String, Object>> rows) {
+        boolean hasNext = rows.size() > 20;
+        return Map.of("items", hasNext ? rows.subList(0, 20) : rows, "hasNext", hasNext);
+    }
+
     @PostMapping("/posts/enhanced")
     @Transactional
     Map<String, Object> publish(Authentication auth, @RequestBody Map<String, Object> input) {
@@ -308,9 +324,12 @@ public class V2ContentController {
     }
 
     @GetMapping("/admin/appeals")
-    List<Map<String, Object>> adminAppeals(Authentication auth) {
+    Map<String, Object> adminAppeals(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
         service.admin(auth);
-        return db.queryForList("SELECT a.*,u.username FROM appeals a JOIN users u ON u.id=a.user_id ORDER BY (a.status='pending') DESC,a.id DESC LIMIT 100");
+        String name = searchKeyword(keyword);
+        String filter = name == null ? "" : " WHERE LOCATE(LOWER(?),LOWER(u.username))>0";
+        String sql = "SELECT a.*,u.username FROM appeals a JOIN users u ON u.id=a.user_id" + filter + " ORDER BY (a.status='pending') DESC,a.id DESC LIMIT 21 OFFSET " + pageOffset(page);
+        return page(name == null ? db.queryForList(sql) : db.queryForList(sql, name));
     }
 
     @PatchMapping("/admin/appeals/{appealId}")
@@ -330,9 +349,12 @@ public class V2ContentController {
     }
 
     @GetMapping("/admin/reputation")
-    List<Map<String, Object>> adminReputation(Authentication auth) {
+    Map<String, Object> adminReputation(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
         service.admin(auth);
-        return db.queryForList("SELECT r.*,u.username FROM reputation_logs r JOIN users u ON u.id=r.user_id ORDER BY r.id DESC LIMIT 100");
+        String name = searchKeyword(keyword);
+        String filter = name == null ? "" : " WHERE LOCATE(LOWER(?),LOWER(u.username))>0";
+        String sql = "SELECT r.*,u.username FROM reputation_logs r JOIN users u ON u.id=r.user_id" + filter + " ORDER BY r.id DESC LIMIT 21 OFFSET " + pageOffset(page);
+        return page(name == null ? db.queryForList(sql) : db.queryForList(sql, name));
     }
 
     @PatchMapping("/admin/reputation/{userId}")

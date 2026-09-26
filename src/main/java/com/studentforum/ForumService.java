@@ -31,7 +31,7 @@ public class ForumService {
     }
     List<Map<String,Object>> sortedReplies(long postId,String sort) {
         if (!Set.of("earliest","latest","hot").contains(sort)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"回复排序无效");
-        return db.queryForList("SELECT r.*,u.username,u.points AS author_points,q.content AS quote_content FROM replies r JOIN users u ON u.id=r.author_id LEFT JOIN replies q ON q.id=r.quote_reply_id AND q.status='published' WHERE r.post_id=? AND r.status='published' ORDER BY r.is_accepted DESC,"+("latest".equals(sort)?"r.created_at DESC":"hot".equals(sort)?"u.points DESC,r.created_at DESC":"r.created_at ASC")+" LIMIT 200",postId);
+        return db.queryForList("SELECT r.*,u.username,u.points AS author_points,u.role AS author_role,mb.name AS author_board_name,q.content AS quote_content FROM replies r JOIN users u ON u.id=r.author_id LEFT JOIN boards mb ON mb.id=u.moderator_board_id LEFT JOIN replies q ON q.id=r.quote_reply_id AND q.status='published' WHERE r.post_id=? AND r.status='published' ORDER BY r.is_accepted DESC,"+("latest".equals(sort)?"r.created_at DESC":"hot".equals(sort)?"u.points DESC,r.created_at DESC":"r.created_at ASC")+" LIMIT 200",postId);
     }
     long id(Authentication auth) {
         if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"请先登录");

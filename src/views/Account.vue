@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed, onMounted, ref, watch} from 'vue'
 import {useRoute} from 'vue-router'
-import {api, date, level, send} from '../api'
+import {api, date, level, roleBadge, send} from '../api'
 import {useSession} from '../store'
 
 type Notification = {
@@ -138,7 +138,8 @@ async function readAll() {
   <div class="content-page">
     <div v-if="!mine && publicUser">
       <div class="profile-hero"><span class="profile-avatar">{{ publicUser.username[0] }}</span>
-        <div><h1>{{ publicUser.username }}</h1>
+        <div><h1>{{ publicUser.username }}<span v-if="roleBadge(publicUser.role, publicUser.moderator_board_name)"
+              class="role-badge" :class="publicUser.role">{{ roleBadge(publicUser.role, publicUser.moderator_board_name) }}</span></h1>
           <p>{{ publicUser.school }} {{ publicUser.grade }}</p><span>Lv{{
               publicUser.points >= 1000 ? 5 : publicUser.points >= 500 ? 4 : publicUser.points >= 200 ? 3 : publicUser.points >= 50 ? 2 : 1
             }} {{ level(publicUser.points) }} · {{ publicUser.points }} 积分</span></div>
@@ -162,9 +163,9 @@ async function readAll() {
         <RouterLink to="/appeals">前往申诉</RouterLink>
       </div>
       <div class="profile-summary"><span class="profile-avatar">{{ session.user.username[0] }}</span>
-        <div><strong>{{
-            session.user.username
-          }}</strong><span>Lv{{
+        <div><strong>{{ session.user.username }}<span
+            v-if="roleBadge(session.user.role, session.user.moderator_board_name)" class="role-badge"
+            :class="session.user.role">{{ roleBadge(session.user.role, session.user.moderator_board_name) }}</span></strong><span>Lv{{
             session.user.points >= 1000 ? 5 : session.user.points >= 500 ? 4 : session.user.points >= 200 ? 3 : session.user.points >= 50 ? 2 : 1
           }} {{ level(session.user.points) }}</span></div>
         <div class="points-num">{{ session.user.points }}<small>当前积分</small></div>
