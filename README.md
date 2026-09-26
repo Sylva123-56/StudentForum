@@ -10,7 +10,6 @@ Vue 3 + Spring Boot + MySQL 学习社区。MVP 覆盖注册登录、资料、帖
 $env:JAVA_HOME='C:\Program Files\Java\jdk-21'
 $env:DB_USER='root'
 $env:DB_PASSWORD='你的本地密码'
-$env:DEMO_PASSWORD='仅用于本地演示的安全密码'
 mvn spring-boot:run
 ```
 
