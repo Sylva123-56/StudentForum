@@ -57,6 +57,7 @@ public interface ForumMapper {
     @Update("UPDATE posts SET is_top=#{top} WHERE id=#{id}") void top(@Param("id") long id,@Param("top") boolean top);
     @Update("UPDATE users SET status=#{status} WHERE id=#{id}") void userStatus(@Param("id") long id,@Param("status") String status);
     @Update("UPDATE users SET role=#{role},moderator_board_id=#{boardId} WHERE id=#{id}") void userRole(@Param("id") long id,@Param("role") String role,@Param("boardId") Long boardId);
+    @Select("SELECT COUNT(*) FROM users WHERE role='admin'") int adminCount();
     @Select("SELECT id,email,username,role,status,moderator_board_id,points,created_at FROM users ORDER BY id DESC LIMIT 100") List<Map<String,Object>> users();
     @Select("SELECT id FROM users") List<Long> allUserIds();
     @Select("SELECT p.id,p.title,p.status,p.is_featured,p.is_top,p.board_id,p.created_at,u.username FROM posts p JOIN users u ON u.id=p.author_id ORDER BY p.id DESC LIMIT 100") List<Map<String,Object>> adminPosts();
@@ -66,9 +67,17 @@ public interface ForumMapper {
     @Insert("INSERT INTO boards(name,slug,description,sort_order) VALUES(#{name},#{slug},#{description},#{sortOrder})") void addBoard(@Param("name") String name,@Param("slug") String slug,@Param("description") String description,@Param("sortOrder") int sortOrder);
     @Select("SELECT id,name,status FROM boards WHERE id=#{id}") Map<String,Object> adminBoard(long id);
     @Update("UPDATE boards SET status='disabled' WHERE id=#{id} AND status='enabled'") int disableBoard(long id);
+    @Select("SELECT id,name,slug,description,sort_order,status FROM boards ORDER BY status,sort_order,id") List<Map<String,Object>> adminBoards();
+    @Update("UPDATE boards SET name=#{name},slug=#{slug},description=#{description},sort_order=#{sortOrder} WHERE id=#{id}") void editBoard(@Param("id") long id,@Param("name") String name,@Param("slug") String slug,@Param("description") String description,@Param("sortOrder") int sortOrder);
+    @Update("UPDATE boards SET status='enabled' WHERE id=#{id} AND status='disabled'") int enableBoard(long id);
+    @Select("SELECT COUNT(*) FROM boards WHERE slug=#{slug} AND id<>#{id}") int boardSlugTaken(@Param("slug") String slug,@Param("id") long id);
     @Insert("INSERT INTO tags(name) VALUES(#{name})") void addTag(String name);
     @Select("SELECT id,name,status FROM tags WHERE id=#{id}") Map<String,Object> adminTag(long id);
     @Update("UPDATE tags SET status='disabled' WHERE id=#{id} AND status='enabled'") int disableTag(long id);
+    @Select("SELECT id,name,status FROM tags ORDER BY status,name") List<Map<String,Object>> adminTags();
+    @Update("UPDATE tags SET name=#{name} WHERE id=#{id}") void editTag(@Param("id") long id,@Param("name") String name);
+    @Update("UPDATE tags SET status='enabled' WHERE id=#{id} AND status='disabled'") int enableTag(long id);
+    @Select("SELECT COUNT(*) FROM tags WHERE name=#{name} AND id<>#{id}") int tagNameTaken(@Param("name") String name,@Param("id") long id);
     @Select("SELECT id,username,points,school,grade,public_school,public_grade FROM users WHERE id=#{id}") Map<String,Object> publicUser(long id);
     @Select("SELECT COUNT(*) FROM users WHERE email=#{email}") int emailExists(String email);
     @Insert("INSERT INTO users(email,username,password_hash,role,moderator_board_id,points) VALUES(#{email},#{username},#{hash},#{role},#{boardId},5)") void demoUser(@Param("email") String email,@Param("username") String username,@Param("hash") String hash,@Param("role") String role,@Param("boardId") Long boardId);

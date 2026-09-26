@@ -49,8 +49,16 @@ public class AdminController {
         service.admin(auth); String role=String.valueOf(input.get("role"));
         if (!Set.of("student","moderator","admin").contains(role)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         Long board=input.get("boardId")==null?null:((Number)input.get("boardId")).longValue();
-        if ("moderator".equals(role)) service.require(mapper.board(board==null?-1:board));
-        service.require(mapper.user(id)); mapper.userRole(id,role,"moderator".equals(role)?board:null); mapper.adminLog(service.id(auth),"role","user",id,role);
+        String boardName="";
+        if ("moderator".equals(role)) {
+            if (board==null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"请选择版主负责的板块");
+            boardName=String.valueOf(service.require(mapper.board(board)).get("name"));
+        }
+        Map<String,Object> user=service.require(mapper.user(id));
+        if (service.id(auth)==id && !"admin".equals(role)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"不能变更自己的管理员角色");
+        if ("admin".equals(user.get("role")) && !"admin".equals(role) && mapper.adminCount()<=1) throw new ResponseStatusException(HttpStatus.CONFLICT,"至少需要保留一位管理员");
+        mapper.userRole(id,role,"moderator".equals(role)?board:null);
+        mapper.adminLog(service.id(auth),"role","user",id,"moderator".equals(role)?role+" · "+boardName:role);
     }
     @PostMapping("/users/{id}/points") @Transactional void adjust(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
         service.admin(auth); service.require(mapper.user(id)); int amount=((Number)input.get("amount")).intValue();
@@ -59,13 +67,54 @@ public class AdminController {
         mapper.pointLog(id,"adjust",after-before,after,"user",id); mapper.adminLog(service.id(auth),"points","user",id,String.valueOf(amount));
     }
     @GetMapping("/points") List<Map<String,Object>> pointLogs(Authentication auth) { service.admin(auth); return mapper.adminLogs(); }
-    @PostMapping("/boards") void board(Authentication auth,@RequestBody Map<String,Object> input) {
-        service.admin(auth); String name=String.valueOf(input.get("name")),slug=String.valueOf(input.get("slug")),description=String.valueOf(input.getOrDefault("description",""));
+    @GetMapping("/boards") List<Map<String,Object>> boardList(Authentication auth) { service.admin(auth); return mapper.adminBoards(); }
+    @GetMapping("/tags") List<Map<String,Object>> tagList(Authentication auth) { service.admin(auth); return mapper.adminTags(); }
+    private String boardName(Map<String,Object> input) {
+        String name=String.valueOf(input.getOrDefault("name","")).trim();
         if (name.length()<2) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块名称至少需要 2 个字");
         if (name.length()>50) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块名称不能超过 50 个字");
+        return name;
+    }
+    private String boardSlug(Map<String,Object> input) {
+        String slug=String.valueOf(input.getOrDefault("slug","")).trim();
         if (!slug.matches("[a-z0-9-]{2,80}")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块标识只能使用 2-80 位小写字母、数字或短横线");
+        return slug;
+    }
+    private String boardDescription(Map<String,Object> input) {
+        String description=String.valueOf(input.getOrDefault("description","")).trim();
         if (description.length()>255) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块简介不能超过 255 个字");
-        mapper.addBoard(name,slug,description,((Number)input.getOrDefault("sortOrder",0)).intValue()); mapper.adminLog(service.id(auth),"create","board",0,name);
+        return description;
+    }
+    private int sortOrder(Map<String,Object> input) {
+        int order=input.get("sortOrder") instanceof Number value?value.intValue():0;
+        if (order<0 || order>9999) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"排序值范围为 0 到 9999");
+        return order;
+    }
+    private String tagName(Map<String,String> input) {
+        String name=input.getOrDefault("name","").trim();
+        if (name.length()<2) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签名称至少需要 2 个字");
+        if (name.length()>40) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签名称不能超过 40 个字");
+        return name;
+    }
+    @PostMapping("/boards") void board(Authentication auth,@RequestBody Map<String,Object> input) {
+        service.admin(auth); String name=boardName(input),slug=boardSlug(input);
+        if (mapper.boardSlugTaken(slug,0)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块标识已被使用");
+        mapper.addBoard(name,slug,boardDescription(input),sortOrder(input)); mapper.adminLog(service.id(auth),"create","board",0,name);
+    }
+    @PatchMapping("/boards/{id}") void editBoard(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
+        service.admin(auth); Map<String,Object> board=service.require(mapper.adminBoard(id));
+        String name=boardName(input),slug=boardSlug(input);
+        if (mapper.boardSlugTaken(slug,id)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块标识已被使用");
+        mapper.editBoard(id,name,slug,boardDescription(input),sortOrder(input));
+        mapper.adminLog(service.id(auth),"edit","board",id,String.valueOf(board.get("name"))+" → "+name);
+    }
+    @PatchMapping("/boards/{id}/status") void boardStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+        service.admin(auth); Map<String,Object> board=service.require(mapper.adminBoard(id));
+        String status=input.getOrDefault("status","");
+        if (!Set.of("enabled","disabled").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块状态无效");
+        if (status.equals(board.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块已处于该状态");
+        if (("enabled".equals(status)?mapper.enableBoard(id):mapper.disableBoard(id))==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块状态已发生变化");
+        mapper.adminLog(service.id(auth),"enabled".equals(status)?"enable":"disable","board",id,String.valueOf(board.get("name")));
     }
     @DeleteMapping("/boards/{id}") void deleteBoard(Authentication auth,@PathVariable long id) {
         service.admin(auth); Map<String,Object> board=service.require(mapper.adminBoard(id));
@@ -74,10 +123,22 @@ public class AdminController {
         mapper.adminLog(service.id(auth),"disable","board",id,String.valueOf(board.get("name")));
     }
     @PostMapping("/tags") void tag(Authentication auth,@RequestBody Map<String,String> input) {
-        service.admin(auth); String name=input.getOrDefault("name","").trim();
-        if (name.length()<2) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签名称至少需要 2 个字");
-        if (name.length()>40) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签名称不能超过 40 个字");
+        service.admin(auth); String name=tagName(input);
+        if (mapper.tagNameTaken(name,0)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签名称已存在");
         mapper.addTag(name); mapper.adminLog(service.id(auth),"create","tag",0,name);
+    }
+    @PatchMapping("/tags/{id}") void editTag(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+        service.admin(auth); Map<String,Object> tag=service.require(mapper.adminTag(id)); String name=tagName(input);
+        if (mapper.tagNameTaken(name,id)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签名称已存在");
+        mapper.editTag(id,name); mapper.adminLog(service.id(auth),"edit","tag",id,String.valueOf(tag.get("name"))+" → "+name);
+    }
+    @PatchMapping("/tags/{id}/status") void tagStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+        service.admin(auth); Map<String,Object> tag=service.require(mapper.adminTag(id));
+        String status=input.getOrDefault("status","");
+        if (!Set.of("enabled","disabled").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签状态无效");
+        if (status.equals(tag.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签已处于该状态");
+        if (("enabled".equals(status)?mapper.enableTag(id):mapper.disableTag(id))==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签状态已发生变化");
+        mapper.adminLog(service.id(auth),"enabled".equals(status)?"enable":"disable","tag",id,String.valueOf(tag.get("name")));
     }
     @DeleteMapping("/tags/{id}") void deleteTag(Authentication auth,@PathVariable long id) {
         service.admin(auth); Map<String,Object> tag=service.require(mapper.adminTag(id));

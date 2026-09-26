@@ -1219,6 +1219,84 @@ footer span {
     min-width: 140px
 }
 
+.admin-list strong small {
+    display: inline;
+    margin-left: 6px;
+    color: #b06a3a;
+    font-weight: 400
+}
+
+.admin-row-actions {
+    display: flex;
+    flex: none;
+    gap: 10px;
+    margin-top: 0
+}
+
+.table-action {
+    border: 1px solid #cdded7;
+    border-radius: 5px;
+    background: #fff;
+    padding: 6px 11px;
+    color: #0b7771;
+    font-size: 12px;
+    white-space: nowrap
+}
+
+.table-action:hover {
+    background: #f2f7f4
+}
+
+.table-action.danger {
+    border-color: #e6c3c3;
+    color: #a4453f
+}
+
+.admin-form {
+    margin: 0 0 22px;
+    padding: 20px;
+    border: 1px solid #dce7e2;
+    border-radius: 7px;
+    background: #f8fbf9
+}
+
+.admin-form h3 {
+    margin: 0 0 16px
+}
+
+.admin-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 16px;
+    color: #3f5550;
+    font-size: 13px;
+    font-weight: 650
+}
+
+.admin-form input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #dce7e2;
+    border-radius: 5px;
+    background: #fff
+}
+
+.admin-form select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #dce7e2;
+    border-radius: 5px;
+    background: #fff;
+    color: #263e39
+}
+
+.admin-form-hint {
+    margin: 0 0 16px;
+    color: #617772;
+    font-size: 13px
+}
+
 @media (max-width: 1100px) {
     .top-inner {
         gap: 25px
