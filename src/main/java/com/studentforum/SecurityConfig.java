@@ -25,7 +25,7 @@ public class SecurityConfig {
         http.securityContext(config -> config.securityContextRepository(repository))
             .csrf(config -> config.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
             .authorizeHttpRequests(config -> config.requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "MODERATOR")
-                .requestMatchers(HttpMethod.GET, "/api/boards/**", "/api/posts/*", "/api/posts/*/replies", "/api/posts/*/vote", "/api/posts/*/bounty", "/api/posts/*/revisions/**", "/api/search", "/api/tags/**", "/api/levels", "/api/users/**", "/uploads/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/groups/**", "/api/boards/**", "/api/posts/*", "/api/posts/*/replies", "/api/posts/*/vote", "/api/posts/*/bounty", "/api/posts/*/revisions/**", "/api/search", "/api/tags/**", "/api/levels", "/api/users/**", "/uploads/**").permitAll()
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/api/csrf", "/", "/index.html", "/assets/**").permitAll()
                 .anyRequest().authenticated())
             .exceptionHandling(config -> config.authenticationEntryPoint((request,response,error) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))

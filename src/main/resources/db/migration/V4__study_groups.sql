@@ -1,0 +1,122 @@
+CREATE TABLE IF NOT EXISTS study_groups (
+  exam VARCHAR(60) NOT NULL DEFAULT '',
+  goal VARCHAR(120) NOT NULL DEFAULT '',
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(80) NOT NULL,
+  description TEXT NOT NULL,
+  avatar_url VARCHAR(255),
+  tags VARCHAR(500) NOT NULL DEFAULT '',
+  subject VARCHAR(100) NOT NULL DEFAULT '',
+  school VARCHAR(100) NOT NULL DEFAULT '',
+  owner_id BIGINT NOT NULL,
+  visibility VARCHAR(20) NOT NULL DEFAULT 'public',
+  join_mode VARCHAR(20) NOT NULL DEFAULT 'free',
+  member_count INT NOT NULL DEFAULT 0,
+  post_count INT NOT NULL DEFAULT 0,
+  activity_score INT NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX(status, visibility, created_at), INDEX(owner_id), INDEX(subject), INDEX(school)
+);
+CREATE TABLE IF NOT EXISTS study_group_members (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  role VARCHAR(20) NOT NULL DEFAULT 'member',
+  joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(group_id,user_id), INDEX(group_id,role), INDEX(user_id)
+);
+CREATE TABLE IF NOT EXISTS study_group_posts (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  author_id BIGINT NOT NULL,
+  title VARCHAR(160) NOT NULL,
+  content TEXT NOT NULL,
+  image_path VARCHAR(255),
+  tags VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'published',
+  is_top BOOLEAN NOT NULL DEFAULT FALSE,
+  is_featured BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX(group_id,status,created_at), INDEX(author_id)
+);
+CREATE TABLE IF NOT EXISTS study_group_post_replies (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  post_id BIGINT NOT NULL,
+  author_id BIGINT NOT NULL,
+  content TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX(post_id,created_at)
+);
+CREATE TABLE IF NOT EXISTS study_group_post_likes (post_id BIGINT NOT NULL,user_id BIGINT NOT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(post_id,user_id));
+CREATE TABLE IF NOT EXISTS study_group_post_favorites (post_id BIGINT NOT NULL,user_id BIGINT NOT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(post_id,user_id));
+CREATE TABLE IF NOT EXISTS study_group_announcements (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  author_id BIGINT NOT NULL,
+  title VARCHAR(160) NOT NULL,
+  content TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX(group_id,created_at)
+);
+CREATE TABLE IF NOT EXISTS study_group_files (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  uploader_id BIGINT NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  path VARCHAR(255) NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  allow_download BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX(group_id,created_at)
+);
+CREATE TABLE IF NOT EXISTS study_group_join_requests (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  message VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  reviewer_id BIGINT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  handled_at DATETIME NULL,
+  UNIQUE(group_id,user_id,status), INDEX(group_id,status)
+);
+CREATE TABLE IF NOT EXISTS study_group_checkins (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  creator_id BIGINT NOT NULL,
+  title VARCHAR(160) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  due_at DATETIME NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX(group_id,status)
+);
+CREATE TABLE IF NOT EXISTS study_group_checkin_records (checkin_id BIGINT NOT NULL,user_id BIGINT NOT NULL,content VARCHAR(500) NOT NULL DEFAULT '',created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(checkin_id,user_id));
+CREATE TABLE IF NOT EXISTS study_group_logs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  actor_id BIGINT NULL,
+  action VARCHAR(50) NOT NULL,
+  target_type VARCHAR(30) NOT NULL,
+  target_id BIGINT NOT NULL DEFAULT 0,
+  detail VARCHAR(500) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX(group_id,created_at)
+);
+CREATE TABLE IF NOT EXISTS study_group_reports (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  group_id BIGINT NOT NULL,
+  reporter_id BIGINT NOT NULL,
+  target_type VARCHAR(30) NOT NULL,
+  target_id BIGINT NOT NULL,
+  reason VARCHAR(80) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  handler_id BIGINT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  handled_at DATETIME NULL,
+  INDEX(group_id,status,created_at)
+);

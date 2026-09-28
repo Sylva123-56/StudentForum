@@ -7,3 +7,4 @@ uploads/
 .m2/
 .npm-cache/
 *.tsbuildinfo
+progress.md

@@ -34,6 +34,7 @@ async function logout() {
           <RouterLink to="/">讨论</RouterLink>
           <RouterLink to="/boards">板块</RouterLink>
           <RouterLink to="/featured">精华</RouterLink>
+          <RouterLink to="/groups">小组</RouterLink>
           <RouterLink v-if="session.user" to="/feed/following">关注</RouterLink>
         </nav>
         <form class="header-search" @submit.prevent="search">
@@ -63,6 +64,7 @@ async function logout() {
       <RouterLink to="/" @click="menu=false">讨论</RouterLink>
       <RouterLink to="/boards" @click="menu=false">板块</RouterLink>
       <RouterLink to="/featured" @click="menu=false">精华</RouterLink>
+      <RouterLink to="/groups" @click="menu=false">学习小组</RouterLink>
       <RouterLink to="/posts/new" @click="menu=false">发布帖子</RouterLink>
       <RouterLink v-if="session.user" to="/me" @click="menu=false">个人中心</RouterLink>
       <form @submit.prevent="search"><input v-model="query" placeholder="搜索帖子标题"/>
@@ -74,6 +76,7 @@ async function logout() {
         <div class="sidebar-label">发现</div>
         <RouterLink to="/" class="side-link">全部讨论</RouterLink>
         <RouterLink to="/featured" class="side-link">精选内容</RouterLink>
+        <RouterLink to="/groups" class="side-link">学习小组</RouterLink>
         <RouterLink v-if="session.user" to="/feed/following" class="side-link">关注动态</RouterLink>
         <RouterLink v-if="session.user" to="/messages" class="side-link">私信</RouterLink>
         <RouterLink v-if="session.user" to="/me/drafts" class="side-link">草稿箱</RouterLink>

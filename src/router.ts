@@ -6,9 +6,12 @@ import Account from './views/Account.vue'
 import Auth from './views/Auth.vue'
 import Admin from './views/Admin.vue'
 import V2Hub from './views/V2Hub.vue'
+import Groups from './views/Groups.vue'
 import { useSession } from './store'
 const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/', component: Feed }, { path: '/boards', component: Feed }, { path: '/boards/:id', component: Feed }, { path: '/search', component: Feed }, { path: '/featured', component: Feed }, { path: '/tags/:id', component: Feed },
+  { path: '/groups', component: Groups }, { path: '/groups/new', component: Groups, meta: { login: true } },
+  { path: '/groups/:id/settings', component: Groups, meta: { login: true } }, { path: '/groups/:id/members', component: Groups }, { path: '/groups/:id/files', component: Groups }, { path: '/groups/:id/checkin', component: Groups }, { path: '/groups/:id/posts/:postId', component: Groups }, { path: '/groups/:id', component: Groups },
   { path: '/posts/new', component: Compose, meta: { login: true } }, { path: '/posts/:id', component: PostDetail },
   { path: '/login', component: Auth }, { path: '/register', component: Auth },
   { path: '/me', component: Account, meta: { login: true } }, { path: '/me/notifications', component: Account, meta: { login: true } },
@@ -17,7 +20,7 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/messages', component: V2Hub, meta: { login: true } }, { path: '/messages/:conversationId', component: V2Hub, meta: { login: true } },
   { path: '/me/drafts', component: V2Hub, meta: { login: true } }, { path: '/me/notifications/settings', component: V2Hub, meta: { login: true } },
   { path: '/posts/:id/revisions', component: V2Hub }, { path: '/appeals', component: V2Hub, meta: { login: true } },
-  { path: '/admin/login', component: Auth }, { path: '/admin/:section?', component: Admin, meta: { login: true } }
+  { path: '/admin/login', component: Auth }, { path: '/admin/groups', component: Groups, meta: { login: true } }, { path: '/admin/groups/logs', component: Groups, meta: { login: true } }, { path: '/admin/:section?', component: Admin, meta: { login: true } }
 ] })
 router.beforeEach(async to => { const session = useSession(); if (!session.ready) await session.refresh(); if (to.meta.login && !session.user) return { path: '/login', query: { next: to.fullPath } } })
 export default router
