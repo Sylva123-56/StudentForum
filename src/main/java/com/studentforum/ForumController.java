@@ -225,6 +225,11 @@ public class ForumController {
         return mapper.favorites(service.id(auth), 20, (Math.max(page, 1) - 1) * 20);
     }
 
+    @GetMapping("/me/posts")
+    List<Map<String, Object>> authoredPosts(Authentication auth) {
+        return mapper.authoredPosts(service.id(auth), 100);
+    }
+
     @GetMapping("/notifications")
     Map<String, Object> notifications(Authentication auth, @RequestParam(defaultValue = "1") int page) {
         if (page < 1 || page > 10000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "页码无效");

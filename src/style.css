@@ -1629,3 +1629,17 @@ footer span {
 .v2-editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
 .v2-editor-toolbar button { border: 1px solid #cdded7; border-radius: 6px; background: #f2f7f4; padding: 7px 11px; cursor: pointer; }
 .v2-editor-toolbar span { color: #61757a; font-size: 13px; }
+
+.authored-post-list { display: grid; gap: 10px; }
+.authored-post { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px; border: 1px solid #e5ece8; border-radius: 7px; background: #fff; }
+.authored-post-main { min-width: 0; }
+.authored-post-title { display: block; color: #203d36; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }
+.authored-post-title:hover { color: #0b7771; }
+.authored-post-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 8px; color: #9aaba4; font-size: 12px; }
+.authored-post-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.post-delete { display: inline-flex; align-items: center; gap: 5px; flex: none; border: 1px solid #f0d4d0; border-radius: 5px; padding: 7px 10px; background: #fff; color: #b6574d; font-size: 12px; }
+.post-delete:hover { border-color: #c9685c; background: #fff8f7; color: #a33d32; }
+@media (max-width: 600px) {
+    .authored-post { align-items: flex-start; padding: 15px; }
+    .post-delete { padding: 6px 8px; }
+}

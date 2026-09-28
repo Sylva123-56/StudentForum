@@ -3,6 +3,7 @@ import {computed, onMounted, ref, watch} from 'vue'
 import {useRoute} from 'vue-router'
 import {api, date, level, roleBadge, send} from '../api'
 import {useSession} from '../store'
+import {Heart, MessageCircle, Trash2} from 'lucide-vue-next'
 
 type Notification = {
   id: number;
@@ -16,7 +17,7 @@ const route = useRoute(), session = useSession(),
     tab = ref(route.path.includes('notifications') ? 'notifications' : 'profile'), favorites = ref<any[]>([]),
     logs = ref<any[]>([]), notifications = ref<Notification[]>([]), publicUser = ref<any>(), error = ref(''),
     notificationError = ref(''), saved = ref(''), social = ref<any>({}), following = ref<any[]>([]),
-    followers = ref<any[]>([]), reputationLogs = ref<any[]>([])
+    followers = ref<any[]>([]), reputationLogs = ref<any[]>([]), authoredPosts = ref<any[]>([])
 const mine = computed(() => !route.params.id)
 const notificationPage = ref(1), notificationHasNext = ref(false)
 const profile = ref({school: '', grade: '', major: '', subjectPreference: '', publicSchool: false, publicGrade: false})
@@ -38,7 +39,7 @@ onMounted(async () => {
     publicGrade: user.public_grade
   };
   await reloadNotifications();
-  [favorites.value, logs.value, following.value, followers.value, social.value] = await Promise.all([api('/me/favorites').catch(() => []), api('/me/point-logs').catch(() => []), api('/me/following').catch(() => []), api('/me/followers').catch(() => []), api('/users/' + user.id + '/social').catch(() => ({}))]);
+  [favorites.value, logs.value, following.value, followers.value, social.value, authoredPosts.value] = await Promise.all([api('/me/favorites').catch(() => []), api('/me/point-logs').catch(() => []), api('/me/following').catch(() => []), api('/me/followers').catch(() => []), api('/users/' + user.id + '/social').catch(() => ({})), api('/me/posts').catch(() => [])]);
   reputationLogs.value = (await api<{ logs: any[] }>('/me/reputation').catch(() => ({logs: []}))).logs
 })
 watch(() => route.path, path => {
@@ -133,6 +134,16 @@ async function readAll() {
     notificationError.value = (exception as Error).message
   }
 }
+
+async function deletePost(post: any) {
+  if (!window.confirm('确定要删除这篇帖子吗？删除后将无法在个人空间查看。')) return
+  try {
+    await send('/posts/' + post.id, 'DELETE')
+    authoredPosts.value = authoredPosts.value.filter(item => item.id !== post.id)
+  } catch (exception) {
+    error.value = (exception as Error).message
+  }
+}
 </script>
 <template>
   <div class="content-page">
@@ -182,7 +193,7 @@ async function readAll() {
       <div class="account-tabs-row">
         <div class="tabs">
           <button
-              v-for="item in [{id:'profile',name:'个人资料'},{id:'favorites',name:'我的收藏'},{id:'notifications',name:'通知'},{id:'points',name:'积分明细'},{id:'following',name:'我的关注'},{id:'followers',name:'我的粉丝'},{id:'reputation',name:'信誉记录'}]"
+              v-for="item in [{id:'profile',name:'个人资料'},{id:'favorites',name:'我的收藏'},{id:'notifications',name:'通知'},{id:'points',name:'积分明细'},{id:'following',name:'我的关注'},{id:'followers',name:'我的粉丝'},{id:'posts',name:'动态'},{id:'reputation',name:'信誉记录'}]"
               :key="item.id" :class="{active:tab===item.id}" @click="tab=item.id">{{ item.name }}<span
               v-if="item.id==='notifications' && session.unread"> {{ session.unread }}</span></button>
         </div>
@@ -226,6 +237,16 @@ async function readAll() {
           <span>第 {{ notificationPage }} 页</span>
           <button :disabled="!notificationHasNext" @click="changeNotificationPage(notificationPage + 1)">下一页</button>
         </nav>
+      </div>
+      <div v-if="tab==='posts'" class="account-list authored-post-list">
+        <div v-if="!authoredPosts.length" class="empty">还没有发布过帖子。</div>
+        <article v-for="item in authoredPosts" :key="item.id" class="authored-post">
+          <div class="authored-post-main">
+            <RouterLink :to="'/posts/'+item.id" class="authored-post-title">{{ item.title }}</RouterLink>
+            <div class="authored-post-meta"><span>{{ item.board_name }} · {{ date(item.created_at) }}</span><span><MessageCircle :size="14" /> {{ item.reply_count || 0 }} 条评论</span><span><Heart :size="14" /> {{ item.favorite_count || 0 }} 个赞</span></div>
+          </div>
+          <button class="post-delete" type="button" title="删除帖子" aria-label="删除帖子" @click="deletePost(item)"><Trash2 :size="16" /> 删除</button>
+        </article>
       </div>
       <div v-if="tab==='reputation'" class="account-list">
         <article v-for="item in reputationLogs" :key="item.id" class="v2-record">{{
