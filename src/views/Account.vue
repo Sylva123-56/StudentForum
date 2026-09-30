@@ -4,6 +4,7 @@ import {useRoute} from 'vue-router'
 import {api, date, level, roleBadge, send} from '../api'
 import {useSession} from '../store'
 import {Heart, MessageCircle, Trash2} from 'lucide-vue-next'
+import ConfirmDialog from './ConfirmDialog.vue'
 
 type Notification = {
   id: number;
@@ -17,7 +18,8 @@ const route = useRoute(), session = useSession(),
     tab = ref(route.path.includes('notifications') ? 'notifications' : 'profile'), favorites = ref<any[]>([]),
     logs = ref<any[]>([]), notifications = ref<Notification[]>([]), publicUser = ref<any>(), error = ref(''),
     notificationError = ref(''), saved = ref(''), social = ref<any>({}), following = ref<any[]>([]),
-    followers = ref<any[]>([]), reputationLogs = ref<any[]>([]), authoredPosts = ref<any[]>([])
+    followers = ref<any[]>([]), reputationLogs = ref<any[]>([]), authoredPosts = ref<any[]>([]),
+    pendingDelete = ref<any>(null), deletingPost = ref(false)
 const mine = computed(() => !route.params.id)
 const notificationPage = ref(1), notificationHasNext = ref(false)
 const profile = ref({school: '', grade: '', major: '', subjectPreference: '', publicSchool: false, publicGrade: false})
@@ -135,13 +137,23 @@ async function readAll() {
   }
 }
 
-async function deletePost(post: any) {
-  if (!window.confirm('确定要删除这篇帖子吗？删除后将无法在个人空间查看。')) return
+function deletePost(post: any) {
+  pendingDelete.value = post
+}
+
+async function confirmDeletePost() {
+  const post = pendingDelete.value
+  if (!post || deletingPost.value) return
+  deletingPost.value = true
   try {
-    await send('/posts/' + post.id, 'DELETE')
-    authoredPosts.value = authoredPosts.value.filter(item => item.id !== post.id)
+    await send('/posts/' + post.id, 'DELETE');
+    authoredPosts.value = authoredPosts.value.filter(item => item.id !== post.id);
+    error.value = ''
   } catch (exception) {
     error.value = (exception as Error).message
+  } finally {
+    deletingPost.value = false;
+    pendingDelete.value = null
   }
 }
 </script>
@@ -277,5 +289,8 @@ async function deletePost(post: any) {
           }}</strong></div>
       </div>
       <p v-if="error" class="error">{{ error }}</p></template>
+    <ConfirmDialog :open="!!pendingDelete" title="删除这篇帖子" :subject="pendingDelete?.title"
+      description="帖子正文、图片和全部回复会一并移除，无法恢复。" :pending="deletingPost"
+      @cancel="pendingDelete = null" @confirm="confirmDeletePost" />
   </div>
 </template>

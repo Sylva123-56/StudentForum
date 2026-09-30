@@ -146,7 +146,15 @@ public class GroupController {
         if (!db.queryForList("SELECT id FROM study_group_join_requests WHERE group_id=? AND user_id=? AND status='pending'", groupId, user).isEmpty())
             bad("申请已提交");
         String message = text(input, "message");
-        db.update("INSERT INTO study_group_join_requests(group_id,user_id,message) VALUES(?,?,?)", groupId, user, message);
+        // 退出或被拒后重新申请：复用同一行并清掉历史记录，避免 (group_id,user_id,status) 唯一键冲突
+        List<Map<String, Object>> previous = db.queryForList("SELECT id FROM study_group_join_requests WHERE group_id=? AND user_id=? ORDER BY id DESC LIMIT 1", groupId, user);
+        if (previous.isEmpty()) {
+            db.update("INSERT INTO study_group_join_requests(group_id,user_id,message) VALUES(?,?,?)", groupId, user, message);
+        } else {
+            long requestId = rowNumber(previous.getFirst(), "id");
+            db.update("DELETE FROM study_group_join_requests WHERE group_id=? AND user_id=? AND id<>?", groupId, user, requestId);
+            db.update("UPDATE study_group_join_requests SET status='pending',message=?,reviewer_id=NULL,handled_at=NULL,created_at=NOW() WHERE id=?", message, requestId);
+        }
         notifyManagers(groupId, "有新的小组加入申请，请及时审核");
         log(groupId, user, "apply", "member", user, message);
         return Map.of("status", "pending");
@@ -385,6 +393,8 @@ public class GroupController {
         List<Map<String, Object>> rows = db.queryForList("SELECT * FROM study_group_join_requests WHERE id=? AND group_id=? AND status='pending'", requestId, groupId);
         if (rows.isEmpty()) bad("申请不存在或已处理");
         long user = rowNumber(rows.getFirst(), "user_id");
+        // 同一位用户在同一小组只保留一条申请记录，防止历史 approved/rejected 记录撞唯一键
+        db.update("DELETE FROM study_group_join_requests WHERE group_id=? AND user_id=? AND id<>?", groupId, user, requestId);
         db.update("UPDATE study_group_join_requests SET status=?,reviewer_id=?,handled_at=NOW() WHERE id=?", status, actor, requestId);
         if ("approved".equals(status) && member(groupId, user) == null) addMember(groupId, user, "member");
         db.update("INSERT INTO notifications(user_id,kind,message) VALUES(?,?,?)", user, "group", "小组加入申请已" + (("approved".equals(status)) ? "通过" : "拒绝"));

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Bookmark, Flag, CheckCircle2, MessageCircle, ArrowLeft } from 'lucide-vue-next'
 import { api, date, roleBadge, send, upload, type Post, type Reply } from '../api'
 import { useSession } from '../store'
+import ConfirmDialog from './ConfirmDialog.vue'
 import RichContent from './RichContent.vue'
 const route = useRoute(), router = useRouter(), session = useSession(), post = ref<Post>(), replies = ref<Reply[]>([]), content = ref(''), image = ref(''), error = ref(''), editing = ref(false), title = ref(''), body = ref(''), vote = ref<any>(), bounty = ref<any>(), chosen = ref<number[]>([]), replySort = ref('earliest'), quoteId = ref<number>(), editReplyId = ref<number>(), replyBody = ref(''), replyHistory = ref<any[]>([])
 const id = Number(route.params.id)
@@ -17,7 +18,14 @@ async function report(type: string, targetId: number) { if (!session.user) retur
 async function editReply(item: Reply) { editReplyId.value = item.id; replyBody.value = item.content; replyHistory.value = await api('/replies/' + item.id + '/revisions') }
 async function saveReply() { if (await act(() => send('/replies/' + editReplyId.value, 'PATCH', { content: replyBody.value }))) editReplyId.value = undefined }
 async function ballot() { await act(() => send('/posts/' + id + '/vote/ballots', 'POST', { optionIds: chosen.value })) }
-async function remove() { if (confirm('确定删除这篇帖子？')) { await send('/posts/' + id, 'DELETE'); router.push('/') } }
+const confirmingDelete = ref(false), deleting = ref(false)
+function remove() { deleting.value = false; confirmingDelete.value = true }
+async function removePost() {
+    deleting.value = true
+    try { await send('/posts/' + id, 'DELETE'); confirmingDelete.value = false; router.push('/') }
+    catch (exception) { confirmingDelete.value = false; error.value = (exception as Error).message }
+    finally { deleting.value = false }
+}
 </script>
 <template>
     <div v-if="post" class="detail-page">
@@ -126,4 +134,7 @@ async function remove() { if (confirm('确定删除这篇帖子？')) { await se
         <p v-if="error" class="error">{{ error }}</p>
     </div>
     <div v-else class="empty">{{ error || '正在加载帖子…' }}</div>
+    <ConfirmDialog :open="confirmingDelete" title="删除这篇帖子" :subject="post?.title"
+        description="帖子正文、图片和全部回复会一并移除，无法恢复。" :pending="deleting"
+        @cancel="confirmingDelete = false" @confirm="removePost" />
 </template>
