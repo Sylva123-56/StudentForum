@@ -20,5 +20,6 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
 }
 export const send = <T = any>(path: string, method: string, value?: object) => api<T>(path, { method, body: value ? JSON.stringify(value) : undefined })
 export async function upload(file: File) { const form = new FormData(); form.append('file', file); return api<{ path: string }>('/uploads', { method: 'POST', body: form }) }
+export async function uploadToGroup(groupId: number, file: File) { const form = new FormData(); form.append('file', file); return api<{ path: string; name: string; sizeBytes: number }>(`/groups/${groupId}/files/upload`, { method: 'POST', body: form }) }
 export function level(points: number) { return points >= 1000 ? '学霸' : points >= 500 ? '达人' : points >= 200 ? '学长' : points >= 50 ? '学友' : '新生' }
 export function date(value: string) { return new Date(value).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) }

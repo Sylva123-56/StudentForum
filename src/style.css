@@ -1614,7 +1614,8 @@ footer span {
 .appeal-review { display: grid; gap: 8px; margin-top: 16px; }
 .appeal-review textarea { width: 100%; padding: 11px 12px; border: 1px solid #dce7e2; border-radius: 5px; resize: vertical; }
 .appeal-review .v2-inline { margin: 4px 0 0; }
-.v2-draft { display: flex; align-items: center; justify-content: space-between; }
+.v2-draft { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 18px; border: 1px solid #e3e9e7; border-radius: 10px; background: #fff; }
+.v2-draft + .v2-draft { margin-top: 10px; }
 .v2-vote { display: grid; gap: 12px; margin: 20px 0; padding: 20px; border: 1px solid #d9e4e0; border-radius: 12px; }
 .v2-vote label { cursor: pointer; }
 .rich-content { line-height: 1.85; white-space: normal; overflow-wrap: anywhere; }

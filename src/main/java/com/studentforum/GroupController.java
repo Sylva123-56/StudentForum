@@ -1,11 +1,16 @@
 package com.studentforum;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -13,10 +18,12 @@ import org.springframework.web.server.ResponseStatusException;
 public class GroupController {
     private final JdbcTemplate db;
     private final ForumService service;
+    private final Path directory;
 
-    public GroupController(JdbcTemplate db, ForumService service) {
+    public GroupController(JdbcTemplate db, ForumService service, @Value("${forum.uploads}") String uploadPath) {
         this.db = db;
         this.service = service;
+        this.directory = Path.of(uploadPath).toAbsolutePath().normalize();
     }
 
     @GetMapping("/rankings")
@@ -326,6 +333,36 @@ public class GroupController {
         log(groupId, user, "file", "file", 0, name);
     }
 
+    @PostMapping("/{groupId}/files/upload")
+    public Map<String, Object> uploadFile(Authentication auth, @PathVariable long groupId, @RequestParam MultipartFile file) throws IOException {
+        long user = service.id(auth);
+        requireMember(groupId, user);
+        service.writable(auth);
+        if (file == null || file.isEmpty()) bad("请选择要上传的文件");
+        if (file.getSize() > 25_000_000) bad("资料不能超过 25MB");
+        String original = originalName(file);
+        String extension = extensionOf(original);
+        if (extension == null) bad("仅支持 PDF、Word、Excel、PPT、TXT、Markdown、压缩包和图片文件");
+        Path folder = directory.resolve("groups").resolve(String.valueOf(groupId));
+        Files.createDirectories(folder);
+        String stored = UUID.randomUUID() + "." + extension;
+        file.transferTo(folder.resolve(stored));
+        return Map.of("path", "/uploads/groups/" + groupId + "/" + stored, "name", original, "sizeBytes", file.getSize());
+    }
+
+    @DeleteMapping("/{groupId}/files/{fileId}")
+    public void deleteFile(Authentication auth, @PathVariable long groupId, @PathVariable long fileId) {
+        long user = service.id(auth);
+        requireMember(groupId, user);
+        List<Map<String, Object>> rows = db.queryForList("SELECT * FROM study_group_files WHERE id=? AND group_id=?", fileId, groupId);
+        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "资料不存在");
+        Map<String, Object> row = rows.getFirst();
+        if (rowNumber(row, "uploader_id") != user) requireManager(groupId, user);
+        db.update("DELETE FROM study_group_files WHERE id=?", fileId);
+        removeStoredFile(String.valueOf(row.get("path")));
+        log(groupId, user, "file_delete", "file", fileId, String.valueOf(row.get("name")));
+    }
+
     @GetMapping("/{groupId}/checkin")
     public List<Map<String, Object>> checkins(@PathVariable long groupId, Authentication auth) {
         requireView(group(groupId), auth);
@@ -517,6 +554,31 @@ public class GroupController {
     private long numberOr(Map<String, Object> input, String key, long fallback) {
         Object v = input.get(key);
         return v == null ? fallback : Long.parseLong(String.valueOf(v));
+    }
+
+    private String originalName(MultipartFile file) {
+        String name = String.valueOf(file.getOriginalFilename());
+        int slash = Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\'));
+        name = (slash < 0 ? name : name.substring(slash + 1)).trim();
+        if (name.isEmpty() || name.length() > 160) name = "小组资料";
+        return name;
+    }
+
+    private String extensionOf(String name) {
+        String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        int dot = lower.lastIndexOf('.');
+        if (dot < 0 || dot == lower.length() - 1) return null;
+        String extension = lower.substring(dot + 1);
+        if ("jpeg".equals(extension)) return "jpg";
+        return Set.of("pdf", "txt", "md", "csv", "zip", "rar", "7z", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "jpg", "png", "webp", "gif").contains(extension) ? extension : null;
+    }
+
+    private void removeStoredFile(String path) {
+        if (path == null || !path.matches("/uploads/(groups/[0-9]+/)?[0-9a-fA-F-]{36}\\.[A-Za-z0-9]{1,5}")) return;
+        try {
+            Files.deleteIfExists(directory.resolve(path.substring("/uploads/".length())));
+        } catch (IOException ignored) {
+        }
     }
 
     private void bad(String message) {

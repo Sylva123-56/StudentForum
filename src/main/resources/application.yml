@@ -5,10 +5,13 @@ spring:
     password: ${DB_PASSWORD:}
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: 25MB
+      max-request-size: 30MB
 server:
   port: 8081
+  tomcat:
+    # 不限制吞掉的请求体：否则超限上传会被直接断开连接，浏览器只能报 "Failed to fetch"
+    max-swallow-size: -1
   servlet:
     session:
       cookie:
