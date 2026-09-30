@@ -1,10 +1,14 @@
 package com.studentforum;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -17,7 +21,39 @@ import org.springframework.web.server.ResponseStatusException;
 public class ForumService {
     private final ForumMapper mapper;
     private final JdbcTemplate db;
+    private Path directory;
     ForumService(ForumMapper mapper,JdbcTemplate db) { this.mapper = mapper; this.db=db; }
+    @Value("${forum.uploads}") void uploads(String uploadPath) { this.directory = Path.of(uploadPath).toAbsolutePath().normalize(); }
+    /**
+     * 作者自助删除帖子：真的是从数据库里删掉，而不是把 status 改成 deleted。
+     * replies / post_tags / favorites 有 V6 迁移加上的 ON DELETE CASCADE 外键兜底，这里也显式删一遍，
+     * 这样即使迁移没跑也不会因为外键报 1451。
+     * 其余没有外键、又指着这篇帖子的表在这里手动清；积分流水(point_logs)、审计(admin_logs)、
+     * 举报与申诉记录(reports/appeals) 保留不动。
+     */
+    @Transactional void hardDeletePost(long postId) {
+        Map<String,Object> post = db.queryForMap("SELECT image_path,cover_path,attachment_path FROM posts WHERE id=?", postId);
+        // 顺序要紧：reply_revisions 和 mentions 靠 replies 行定位，必须在删 replies 之前执行
+        db.update("DELETE FROM reply_revisions WHERE reply_id IN (SELECT id FROM replies WHERE post_id=?)", postId);
+        db.update("DELETE FROM mentions WHERE (target_type='post' AND target_id=?) OR (target_type='reply' AND target_id IN (SELECT id FROM replies WHERE post_id=?))", postId, postId);
+        db.update("DELETE FROM replies WHERE post_id=?", postId);
+        db.update("DELETE FROM post_tags WHERE post_id=?", postId);
+        db.update("DELETE FROM favorites WHERE post_id=?", postId);
+        mapper.deletePost(postId);
+        db.update("DELETE FROM post_revisions WHERE post_id=?", postId);
+        db.update("DELETE FROM notifications WHERE post_id=?", postId);
+        db.update("DELETE FROM vote_ballots WHERE vote_id IN (SELECT id FROM votes WHERE post_id=?)", postId);
+        db.update("DELETE FROM vote_options WHERE vote_id IN (SELECT id FROM votes WHERE post_id=?)", postId);
+        db.update("DELETE FROM votes WHERE post_id=?", postId);
+        db.update("DELETE FROM bounties WHERE post_id=?", postId);
+        for (String column : List.of("image_path","cover_path","attachment_path")) removeUpload(post.get(column));
+    }
+    private void removeUpload(Object path) {
+        if (path == null || directory == null) return;
+        String value = String.valueOf(path);
+        if (!value.matches("/uploads/[0-9a-fA-F-]{36}\\.[A-Za-z0-9]{1,5}")) return;
+        try { Files.deleteIfExists(directory.resolve(value.substring("/uploads/".length()))); } catch (IOException ignored) { }
+    }
     void revision(Authentication auth,long postId,String title,String content) { db.update("INSERT INTO post_revisions(post_id,editor_id,title,content) VALUES(?,?,?,?)",postId,id(auth),title,content); mentions(id(auth),title+" "+content,"post",postId,postId); }
     void mentions(long actor,String content,String type,long target,Long postId) {
         Matcher matcher=Pattern.compile("@([\\p{L}\\p{N}_-]{2,40})").matcher(content);

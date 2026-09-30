@@ -134,7 +134,7 @@ async function removePost() {
         <p v-if="error" class="error">{{ error }}</p>
     </div>
     <div v-else class="empty">{{ error || '正在加载帖子…' }}</div>
-    <ConfirmDialog :open="confirmingDelete" title="删除这篇帖子" :subject="post?.title"
+    <ConfirmDialog :open="confirmingDelete" title="删除帖子" :subject="post?.title"
         description="帖子正文、图片和全部回复会一并移除，无法恢复。" :pending="deleting"
         @cancel="confirmingDelete = false" @confirm="removePost" />
 </template>

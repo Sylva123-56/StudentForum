@@ -25,6 +25,7 @@ public interface ForumMapper {
     @Insert("INSERT IGNORE INTO post_tags(post_id,tag_id) VALUES(#{postId},#{tagId})") void postTag(@Param("postId") long postId,@Param("tagId") long tagId);
     @Update("UPDATE posts SET title=#{title},content=#{content} WHERE id=#{id}") void editPost(@Param("id") long id,@Param("title") String title,@Param("content") String content);
     @Update("UPDATE posts SET status=#{status} WHERE id=#{id}") void postStatus(@Param("id") long id,@Param("status") String status);
+    @Delete("DELETE FROM posts WHERE id=#{id}") void deletePost(long id);
     @Update("UPDATE posts SET view_count=view_count+1 WHERE id=#{id}") void view(long id);
     @Select("SELECT r.*,u.username,u.points AS author_points,u.role AS author_role,mb.name AS author_board_name FROM replies r JOIN users u ON u.id=r.author_id LEFT JOIN boards mb ON mb.id=u.moderator_board_id WHERE r.post_id=#{postId} AND r.status='published' ORDER BY r.is_accepted DESC,r.created_at") List<Map<String,Object>> replies(long postId);
     @Select("SELECT * FROM replies WHERE id=#{id}") Map<String,Object> reply(long id);

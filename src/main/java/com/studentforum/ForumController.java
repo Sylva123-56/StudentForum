@@ -176,11 +176,12 @@ public class ForumController {
     }
 
     @DeleteMapping("/posts/{id}")
+    @Transactional
     void delete(Authentication auth, @PathVariable long id) {
         Map<String, Object> post = service.require(mapper.post(id));
         if (service.number(post, "author_id") != service.id(auth))
             throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        mapper.postStatus(id, "deleted");
+        service.hardDeletePost(id);
     }
 
     @GetMapping("/posts/{id}/replies")

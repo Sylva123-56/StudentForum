@@ -20,27 +20,27 @@ const isNew = computed(() => route.path === '/groups/new')
 const section = computed(() => route.path.endsWith('/members') ? 'members' : route.path.endsWith('/files') ? 'files' : route.path.endsWith('/checkin') ? 'checkin' : '')
 const editing = computed(() => route.path.endsWith('/settings'))
 const pageTitle = computed(() => isNew.value ? '创建学习小组' : editing.value ? '小组设置' : section.value === 'members' ? '小组成员' : section.value === 'files' ? '学习资料' : section.value === 'checkin' ? '打卡任务' : '学习小组')
-const form = ref({name:'', description:'', avatarUrl:'', tags:'', subject:'', school:'', visibility:'public', joinMode:'free'})
-const postForm = ref({title:'', content:'', tags:'', imagePath:''})
-const announceForm = ref({title:'', content:''}), fileForm = ref({name:'', path:'', sizeBytes:0, allowDownload:true})
-const checkinForm = ref({title:'', description:'', dueAt:''}), reply = ref(''), joinMessage = ref(''), memberSearch = ref('')
+const form = ref({ name: '', description: '', avatarUrl: '', tags: '', subject: '', school: '', visibility: 'public', joinMode: 'free' })
+const postForm = ref({ title: '', content: '', tags: '', imagePath: '' })
+const announceForm = ref({ title: '', content: '' }), fileForm = ref({ name: '', path: '', sizeBytes: 0, allowDownload: true })
+const checkinForm = ref({ title: '', description: '', dueAt: '' }), reply = ref(''), joinMessage = ref(''), memberSearch = ref('')
 
 async function load() {
-  loading.value = true; error.value=''
+  loading.value = true; error.value = ''
   try {
-    if (isAdmin.value) { adminGroups.value=await api('/admin/groups'); logs.value=await api('/admin/groups/logs'); return }
-    if (isList.value) { groups.value=await api('/groups?'+new URLSearchParams({keyword:keyword.value,tag:filterTag.value,subject:filterSubject.value,school:filterSchool.value,sort:sort.value})); return }
+    if (isAdmin.value) { adminGroups.value = await api('/admin/groups'); logs.value = await api('/admin/groups/logs'); return }
+    if (isList.value) { groups.value = await api('/groups?' + new URLSearchParams({ keyword: keyword.value, tag: filterTag.value, subject: filterSubject.value, school: filterSchool.value, sort: sort.value })); return }
     if (isNew.value) return
-    if (route.path.includes('/posts/')) { detail.value=await api('/groups/'+groupId.value+'/posts/'+postId.value); return }
-    if (editing.value) { const data=await api<any>('/groups/'+groupId.value); detail.value=data; form.value={name:data.group.name,description:data.group.description,avatarUrl:data.group.avatar_url||'',tags:data.group.tags||'',subject:data.group.subject||'',school:data.group.school||'',visibility:data.group.visibility,joinMode:data.group.join_mode}; return }
-    detail.value=await api('/groups/'+groupId.value)
-    joinRequests.value = ['owner','admin'].includes(detail.value.membership?.role) ? await api('/groups/'+groupId.value+'/join-requests') : []
-  } catch (e) { error.value=(e as Error).message } finally { loading.value=false }
+    if (route.path.includes('/posts/')) { detail.value = await api('/groups/' + groupId.value + '/posts/' + postId.value); return }
+    if (editing.value) { const data = await api<any>('/groups/' + groupId.value); detail.value = data; form.value = { name: data.group.name, description: data.group.description, avatarUrl: data.group.avatar_url || '', tags: data.group.tags || '', subject: data.group.subject || '', school: data.group.school || '', visibility: data.group.visibility, joinMode: data.group.join_mode }; return }
+    detail.value = await api('/groups/' + groupId.value)
+    joinRequests.value = ['owner', 'admin'].includes(detail.value.membership?.role) ? await api('/groups/' + groupId.value + '/join-requests') : []
+  } catch (e) { error.value = (e as Error).message } finally { loading.value = false }
 }
-function run(task:()=>Promise<unknown>) { return task().then(() => load()).catch(e => { error.value=(e as Error).message }) }
-async function create() { await run(async()=>{ const result=await send<any>('/groups','POST',form.value); notice.value='小组创建成功'; await router.push('/groups/'+result.group.id) }) }
-async function save() { await run(async()=>{ await send('/groups/'+groupId.value,'PATCH',form.value); notice.value='设置已保存' }) }
-async function join() { await run(async()=>{ if (detail.value.group.join_mode==='free' && detail.value.group.visibility==='public') await send('/groups/'+groupId.value+'/join','POST'); else await send('/groups/'+groupId.value+'/apply','POST',{message:joinMessage.value}); notice.value='已提交加入申请' }) }
+function run(task: () => Promise<unknown>) { return task().then(() => load()).catch(e => { error.value = (e as Error).message }) }
+async function create() { await run(async () => { const result = await send<any>('/groups', 'POST', form.value); notice.value = '小组创建成功'; await router.push('/groups/' + result.group.id) }) }
+async function save() { await run(async () => { await send('/groups/' + groupId.value, 'PATCH', form.value); notice.value = '设置已保存' }) }
+async function join() { await run(async () => { if (detail.value.group.join_mode === 'free' && detail.value.group.visibility === 'public') await send('/groups/' + groupId.value + '/join', 'POST'); else await send('/groups/' + groupId.value + '/apply', 'POST', { message: joinMessage.value }); notice.value = '已提交加入申请' }) }
 function leave() { pendingAction.value = 'leave' }
 function dissolveGroup() { pendingAction.value = 'dissolve' }
 async function runPendingAction() {
@@ -75,33 +75,33 @@ async function runPendingAction() {
     fileToDelete.value = null
   }
 }
-async function publishPost() { await run(async()=>{ await send('/groups/'+groupId.value+'/posts','POST',postForm.value); postForm.value={title:'',content:'',tags:'',imagePath:''}; notice.value='帖子已发布' }) }
-async function publishAnnouncement() { await run(async()=>{ await send('/groups/'+groupId.value+'/announcements','POST',announceForm.value); announceForm.value={title:'',content:''}; notice.value='公告已发布' }) }
-async function addFile() { await run(async()=>{ await send('/groups/'+groupId.value+'/files','POST',fileForm.value); fileForm.value={name:'',path:'',sizeBytes:0,allowDownload:true}; notice.value='资料已上传' }) }
-async function uploadGroupFile(e:Event) { const input=e.target as HTMLInputElement, f=input.files?.[0]; if(!f)return; try { error.value=''; const result=await uploadToGroup(groupId.value,f); fileForm.value={...fileForm.value,name:result.name||f.name,path:result.path,sizeBytes:result.sizeBytes??f.size,allowDownload:true} } catch(ex) { error.value=(ex as Error).message } finally { input.value='' } }
-function removeFile(file:any) { fileToDelete.value=file; pendingAction.value='file' }
-function canDeleteFile(file:any) { return isManager.value || file.uploader_id===session.user?.id }
-async function createCheckin() { await run(async()=>{ await send('/groups/'+groupId.value+'/checkin','POST',checkinForm.value); checkinForm.value={title:'',description:'',dueAt:''}; notice.value='打卡任务已创建' }) }
-async function completeCheckin(id:number) { await run(async()=>{ await send('/groups/'+groupId.value+'/checkin/'+id+'/complete','POST',{}); notice.value='打卡成功，继续保持' }) }
-async function togglePost(post:any, field:'like'|'favorite') { await run(async()=>{ await send('/groups/'+groupId.value+'/posts/'+post.id+'/'+field,'POST') }) }
-async function moderate(post:any, patch:any) { await run(async()=>{ await send('/groups/'+groupId.value+'/posts/'+post.id,'PATCH',patch); notice.value='内容管理已更新' }) }
-async function replyPost() { if(!reply.value.trim())return; await run(async()=>{ await send('/groups/'+groupId.value+'/posts/'+postId.value+'/replies','POST',{content:reply.value}); reply.value='' }) }
-async function adminStatus(g:any,status:string) { await run(async()=>{ await send('/admin/groups/'+g.id,'PATCH',{status}); notice.value='小组状态已更新' }) }
-async function reviewRequest(request:any, status:'approved'|'rejected') { await run(async()=>{ await send('/groups/'+groupId.value+'/join-requests/'+request.id,'PATCH',{status}); notice.value=status==='approved'?'已同意用户加入小组':'已拒绝加入申请' }) }
-function memberRole(id:number) { return detail.value?.members?.find((m:any)=>m.user_id===id)?.role }
-const isManager = computed(() => ['owner','admin'].includes(detail.value?.membership?.role))
-const isOwner = computed(() => detail.value?.membership?.role==='owner')
+async function publishPost() { await run(async () => { await send('/groups/' + groupId.value + '/posts', 'POST', postForm.value); postForm.value = { title: '', content: '', tags: '', imagePath: '' }; notice.value = '帖子已发布' }) }
+async function publishAnnouncement() { await run(async () => { await send('/groups/' + groupId.value + '/announcements', 'POST', announceForm.value); announceForm.value = { title: '', content: '' }; notice.value = '公告已发布' }) }
+async function addFile() { await run(async () => { await send('/groups/' + groupId.value + '/files', 'POST', fileForm.value); fileForm.value = { name: '', path: '', sizeBytes: 0, allowDownload: true }; notice.value = '资料已上传' }) }
+async function uploadGroupFile(e: Event) { const input = e.target as HTMLInputElement, f = input.files?.[0]; if (!f) return; try { error.value = ''; const result = await uploadToGroup(groupId.value, f); fileForm.value = { ...fileForm.value, name: result.name || f.name, path: result.path, sizeBytes: result.sizeBytes ?? f.size, allowDownload: true } } catch (ex) { error.value = (ex as Error).message } finally { input.value = '' } }
+function removeFile(file: any) { fileToDelete.value = file; pendingAction.value = 'file' }
+function canDeleteFile(file: any) { return isManager.value || file.uploader_id === session.user?.id }
+async function createCheckin() { await run(async () => { await send('/groups/' + groupId.value + '/checkin', 'POST', checkinForm.value); checkinForm.value = { title: '', description: '', dueAt: '' }; notice.value = '打卡任务已创建' }) }
+async function completeCheckin(id: number) { await run(async () => { await send('/groups/' + groupId.value + '/checkin/' + id + '/complete', 'POST', {}); notice.value = '打卡成功，继续保持' }) }
+async function togglePost(post: any, field: 'like' | 'favorite') { await run(async () => { await send('/groups/' + groupId.value + '/posts/' + post.id + '/' + field, 'POST') }) }
+async function moderate(post: any, patch: any) { await run(async () => { await send('/groups/' + groupId.value + '/posts/' + post.id, 'PATCH', patch); notice.value = '内容管理已更新' }) }
+async function replyPost() { if (!reply.value.trim()) return; await run(async () => { await send('/groups/' + groupId.value + '/posts/' + postId.value + '/replies', 'POST', { content: reply.value }); reply.value = '' }) }
+async function adminStatus(g: any, status: string) { await run(async () => { await send('/admin/groups/' + g.id, 'PATCH', { status }); notice.value = '小组状态已更新' }) }
+async function reviewRequest(request: any, status: 'approved' | 'rejected') { await run(async () => { await send('/groups/' + groupId.value + '/join-requests/' + request.id, 'PATCH', { status }); notice.value = status === 'approved' ? '已同意用户加入小组' : '已拒绝加入申请' }) }
+function memberRole(id: number) { return detail.value?.members?.find((m: any) => m.user_id === id)?.role }
+const isManager = computed(() => ['owner', 'admin'].includes(detail.value?.membership?.role))
+const isOwner = computed(() => detail.value?.membership?.role === 'owner')
 const confirmDialog = computed(() => {
-  if (pendingAction.value === 'dissolve') return { icon: 'dissolve' as const, title: '解散这个小组', subject: detail.value?.group?.name, description: '小组的讨论、资料和打卡记录会一并移除，所有成员都将被移出，且无法恢复。', confirmText: '确认解散', pendingText: '解散中…' }
-  if (pendingAction.value === 'remove') return { icon: 'remove' as const, title: '移除这位成员', subject: memberToRemove.value?.username, description: '移除后对方的成员身份会被取消，需要重新申请才能加入。', confirmText: '确认移除', pendingText: '移除中…' }
-  if (pendingAction.value === 'file') return { icon: 'file' as const, title: '删除这份资料', subject: fileToDelete.value?.name, description: '删除后小组成员将无法再看到这份资料，文件也会一并移除。', confirmText: '确认删除', pendingText: '删除中…' }
+  if (pendingAction.value === 'dissolve') return { icon: 'dissolve' as const, title: '解散此小组', subject: detail.value?.group?.name, description: '小组的讨论、资料和打卡记录会一并移除，所有成员都将被移出，且无法恢复。', confirmText: '确认解散', pendingText: '解散中…' }
+  if (pendingAction.value === 'remove') return { icon: 'remove' as const, title: '移除此成员', subject: memberToRemove.value?.username, description: '移除后对方的成员身份会被取消，需要重新申请才能加入。', confirmText: '确认移除', pendingText: '移除中…' }
+  if (pendingAction.value === 'file') return { icon: 'file' as const, title: '删除此资料', subject: fileToDelete.value?.name, description: '删除后小组成员将无法再看到这份资料，文件也会一并移除。', confirmText: '确认删除', pendingText: '删除中…' }
   return { icon: 'leave' as const, title: '退出这个小组', subject: detail.value?.group?.name, description: '退出后将不再收到这个小组的消息，之后需要重新申请才能加入。', confirmText: '确认退出', pendingText: '退出中…' }
 })
-const visibleMembers = computed(() => (detail.value?.members||[]).filter((m:any)=>!memberSearch.value || m.username.toLowerCase().includes(memberSearch.value.toLowerCase())))
-async function changeRole(userId:number, event:Event) { try { await send('/groups/'+groupId.value+'/members/'+userId,'PATCH',{role:(event.target as HTMLSelectElement).value}); await load() } catch(e) { error.value=(e as Error).message } }
+const visibleMembers = computed(() => (detail.value?.members || []).filter((m: any) => !memberSearch.value || m.username.toLowerCase().includes(memberSearch.value.toLowerCase())))
+async function changeRole(userId: number, event: Event) { try { await send('/groups/' + groupId.value + '/members/' + userId, 'PATCH', { role: (event.target as HTMLSelectElement).value }); await load() } catch (e) { error.value = (e as Error).message } }
 function removeMember(member: any) { memberToRemove.value = member; pendingAction.value = 'remove' }
-watch([keyword,filterTag,filterSubject,filterSchool,sort],()=>{if(isList.value)load()})
-onMounted(load); watch(()=>route.fullPath,load)
+watch([keyword, filterTag, filterSubject, filterSchool, sort], () => { if (isList.value) load() })
+onMounted(load); watch(() => route.fullPath, load)
 </script>
 
 <template>
@@ -110,36 +110,277 @@ onMounted(load); watch(()=>route.fullPath,load)
     <div v-if="notice" class="group-alert success">{{ notice }}</div>
 
     <template v-if="isAdmin">
-      <div class="group-heading"><div><p class="eyebrow">治理中心</p><h1>小组管理</h1><p>审核状态、封禁违规小组，并查看小组操作日志。</p></div></div>
-      <div class="group-card admin-table"><div class="table-row table-head"><span>小组</span><span>组长</span><span>成员 / 帖子</span><span>状态</span><span>操作</span></div><div v-for="g in adminGroups" :key="g.id" class="table-row"><span><RouterLink :to="'/groups/'+g.id">{{ g.name }}</RouterLink><small>{{ g.description }}</small></span><span>{{ g.owner_username }}</span><span>{{ g.member_count }} / {{ g.post_count }}</span><span><b :class="['status-pill',g.status]">{{ g.status==='active'?'正常':'已封禁' }}</b></span><span><button class="text-button" @click="adminStatus(g,g.status==='active'?'disabled':'active')">{{ g.status==='active'?'封禁':'恢复' }}</button></span></div></div>
-      <div class="group-card log-card"><h2>操作日志</h2><div v-for="log in logs" :key="log.id" class="log-line"><b>{{ log.group_name }}</b><span>{{ log.actor_username||'系统' }} · {{ log.action }}</span><small>{{ log.detail }} · {{ date(log.created_at) }}</small></div></div>
+      <div class="group-heading">
+        <div>
+          <p class="eyebrow">治理中心</p>
+          <h1>小组管理</h1>
+          <p>审核状态、封禁违规小组，并查看小组操作日志。</p>
+        </div>
+      </div>
+      <div class="group-card admin-table">
+        <div class="table-row table-head"><span>小组</span><span>组长</span><span>成员 /
+            帖子</span><span>状态</span><span>操作</span></div>
+        <div v-for="g in adminGroups" :key="g.id" class="table-row"><span>
+            <RouterLink :to="'/groups/' + g.id">{{ g.name }}</RouterLink><small>{{ g.description }}</small>
+          </span><span>{{ g.owner_username }}</span><span>{{ g.member_count }} / {{ g.post_count }}</span><span><b
+              :class="['status-pill', g.status]">{{ g.status === 'active' ? '正常' : '已封禁' }}</b></span><span><button
+              class="text-button" @click="adminStatus(g, g.status === 'active' ? 'disabled' : 'active')">{{
+                g.status === 'active' ?'封禁':'恢复' }}</button></span></div>
+      </div>
+      <div class="group-card log-card">
+        <h2>操作日志</h2>
+        <div v-for="log in logs" :key="log.id" class="log-line"><b>{{ log.group_name }}</b><span>{{
+          log.actor_username||'系统' }} · {{ log.action }}</span><small>{{ log.detail }} · {{ date(log.created_at)
+            }}</small></div>
+      </div>
     </template>
 
     <template v-else-if="isList">
-      <div class="group-heading groups-hero"><div><p class="eyebrow">FIND YOUR STUDY CIRCLE</p><h1>学习小组</h1><p>找到一起认真学习的人，把一个人的坚持变成一群人的日常。</p></div><RouterLink v-if="session.user" class="button primary" to="/groups/new">创建小组</RouterLink></div>
-      <div class="group-card group-filters"><input v-model="keyword" placeholder="搜索小组名称、简介或标签"/><input v-model="filterTag" placeholder="标签，如：考研"/><input v-model="filterSubject" placeholder="学科，如：数学"/><input v-model="filterSchool" placeholder="学校"/><select v-model="sort"><option value="activity">按活跃度</option><option value="members">按成员数</option><option value="newest">最新创建</option></select></div>
-      <div class="group-grid"><article v-for="g in groups" :key="g.id" class="group-card group-tile"><div class="tile-top"><div class="group-avatar">{{ g.name.slice(0,1) }}</div><span class="visibility">{{ g.visibility==='public'?'公开':'私密' }}</span></div><RouterLink :to="'/groups/'+g.id" class="tile-title">{{ g.name }}</RouterLink><p>{{ g.description || '这个小组还没有简介。' }}</p><div class="tag-list"><span v-for="tag in (g.tags||'').split(',').filter(Boolean)" :key="tag">#{{ tag.trim() }}</span></div><div class="tile-meta"><span>{{ g.member_count }} 名成员</span><span>{{ g.post_count }} 篇讨论</span><span>{{ g.owner_username }} 创建</span></div></article><div v-if="!groups.length" class="empty-state group-card">还没有找到合适的小组，试试调整筛选条件。</div></div>
+      <div class="group-heading groups-hero">
+        <div>
+          <p class="eyebrow">FIND YOUR STUDY CIRCLE</p>
+          <h1>学习小组</h1>
+          <p>找到一起认真学习的人，把一个人的坚持变成一群人的日常。</p>
+        </div>
+        <RouterLink v-if="session.user" class="button primary" to="/groups/new">创建小组</RouterLink>
+      </div>
+      <div class="group-card group-filters"><input v-model="keyword" placeholder="搜索小组名称、简介或标签" /><input
+          v-model="filterTag" placeholder="标签，如：考研" /><input v-model="filterSubject" placeholder="学科，如：数学" /><input
+          v-model="filterSchool" placeholder="学校" /><select v-model="sort">
+          <option value="activity">按活跃度</option>
+          <option value="members">按成员数</option>
+          <option value="newest">最新创建</option>
+        </select></div>
+      <div class="group-grid">
+        <article v-for="g in groups" :key="g.id" class="group-card group-tile">
+          <div class="tile-top">
+            <div class="group-avatar">{{ g.name.slice(0, 1) }}</div><span class="visibility">{{
+              g.visibility === 'public' ?'公开':'私密' }}</span>
+          </div>
+          <RouterLink :to="'/groups/' + g.id" class="tile-title">{{ g.name }}</RouterLink>
+          <p>{{ g.description || '这个小组还没有简介。' }}</p>
+          <div class="tag-list"><span v-for="tag in (g.tags || '').split(',').filter(Boolean)" :key="tag">#{{ tag.trim()
+              }}</span></div>
+          <div class="tile-meta"><span>{{ g.member_count }} 名成员</span><span>{{ g.post_count }} 篇讨论</span><span>{{
+            g.owner_username }} 创建</span></div>
+        </article>
+        <div v-if="!groups.length" class="empty-state group-card">还没有找到合适的小组，试试调整筛选条件。</div>
+      </div>
     </template>
 
     <template v-else-if="isNew || editing">
-      <div class="group-heading"><div><p class="eyebrow">{{ isNew?'START A NEW CIRCLE':'GROUP SETTINGS' }}</p><h1>{{ pageTitle }}</h1><p>让目标清晰、边界透明，成员才能放心投入。</p></div><RouterLink v-if="!isNew" class="button ghost" :to="'/groups/'+groupId">返回小组</RouterLink></div>
-      <form class="group-card group-form" @submit.prevent="isNew?create():save()"><label>小组名称<input v-model="form.name" required maxlength="80" placeholder="例如：高等数学期末冲刺小组"/></label><label>小组简介<textarea v-model="form.description" rows="5" maxlength="2000" placeholder="介绍小组的目标、适合哪些同学……"></textarea></label><div class="form-two"><label>标签（逗号分隔）<input v-model="form.tags" placeholder="高数,期末,互助"/></label><label>学科<input v-model="form.subject" placeholder="数学 / 英语 / 编程"/></label><label>学校（可选）<input v-model="form.school" placeholder="面向特定学校时填写"/></label><label>头像地址（可选）<input v-model="form.avatarUrl" placeholder="/uploads/group-avatar.png"/></label></div><fieldset><legend>可见性</legend><label class="choice"><input v-model="form.visibility" type="radio" value="public"/>公开：所有人可发现</label><label class="choice"><input v-model="form.visibility" type="radio" value="private"/>私密：仅成员可查看内容</label></fieldset><fieldset><legend>加入方式</legend><label class="choice"><input v-model="form.joinMode" type="radio" value="free"/>自由加入</label><label class="choice"><input v-model="form.joinMode" type="radio" value="apply"/>申请加入</label><label class="choice"><input v-model="form.joinMode" type="radio" value="invite"/>仅邀请</label></fieldset><button class="button primary" type="submit">{{ isNew?'创建小组':'保存设置' }}</button></form>
+      <div class="group-heading">
+        <div>
+          <p class="eyebrow">{{ isNew ? 'START A NEW CIRCLE' : 'GROUP SETTINGS' }}</p>
+          <h1>{{ pageTitle }}</h1>
+          <p>让目标清晰、边界透明，成员才能放心投入。</p>
+        </div>
+        <RouterLink v-if="!isNew" class="button ghost" :to="'/groups/' + groupId">返回小组</RouterLink>
+      </div>
+      <form class="group-card group-form" @submit.prevent="isNew ? create() : save()"><label>小组名称<input v-model="form.name"
+            required maxlength="80" placeholder="例如：高等数学期末冲刺小组" /></label><label>小组简介<textarea
+            v-model="form.description" rows="5" maxlength="2000" placeholder="介绍小组的目标、适合哪些同学……"></textarea></label>
+        <div class="form-two"><label>标签（逗号分隔）<input v-model="form.tags" placeholder="高数,期末,互助" /></label><label>学科<input
+              v-model="form.subject" placeholder="数学 / 英语 / 编程" /></label><label>学校（可选）<input v-model="form.school"
+              placeholder="面向特定学校时填写" /></label><label>头像地址（可选）<input v-model="form.avatarUrl"
+              placeholder="/uploads/group-avatar.png" /></label></div>
+        <fieldset>
+          <legend>可见性</legend><label class="choice"><input v-model="form.visibility" type="radio"
+              value="public" />公开：所有人可发现</label><label class="choice"><input v-model="form.visibility" type="radio"
+              value="private" />私密：仅成员可查看内容</label>
+        </fieldset>
+        <fieldset>
+          <legend>加入方式</legend><label class="choice"><input v-model="form.joinMode" type="radio"
+              value="free" />自由加入</label><label class="choice"><input v-model="form.joinMode" type="radio"
+              value="apply" />申请加入</label><label class="choice"><input v-model="form.joinMode" type="radio"
+              value="invite" />仅邀请</label>
+        </fieldset><button class="button primary" type="submit">{{ isNew ? '创建小组' : '保存设置' }}</button>
+      </form>
     </template>
 
     <template v-else-if="detail && !route.path.includes('/posts/')">
-      <div class="group-cover group-card"><div class="group-avatar large">{{ detail.group.name.slice(0,1) }}</div><div class="cover-copy"><p class="eyebrow">{{ detail.group.subject || '学习共同体' }} · {{ detail.group.visibility==='public'?'公开小组':'私密小组' }}</p><h1>{{ detail.group.name }}</h1><p>{{ detail.group.description }}</p><div class="tag-list"><span v-for="tag in (detail.group.tags||'').split(',').filter(Boolean)" :key="tag">#{{ tag.trim() }}</span></div><div class="tile-meta"><span>{{ detail.group.member_count }} 名成员</span><span>{{ detail.group.post_count }} 篇讨论</span><span>活跃度 {{ detail.group.activity_score }}</span></div></div><div class="cover-actions"><RouterLink v-if="isManager" class="button ghost" :to="'/groups/'+groupId+'/settings'">设置</RouterLink><button v-if="isOwner" class="button danger" @click="dissolveGroup">解散小组</button><button v-if="detail.membership && !isOwner" class="button danger" @click="leave">退出小组</button><template v-if="!detail.membership"><textarea v-if="detail.group.join_mode!=='free'||detail.group.visibility==='private'" v-model="joinMessage" placeholder="申请留言（可选）" rows="2"></textarea><button class="button primary" @click="join">{{ detail.group.join_mode==='free'&&detail.group.visibility==='public'?'加入小组':'申请加入' }}</button></template></div></div>
-      <nav class="group-tabs"><RouterLink :to="'/groups/'+groupId">讨论</RouterLink><RouterLink :to="'/groups/'+groupId+'/members'">成员 {{ detail.group.member_count }}</RouterLink><RouterLink :to="'/groups/'+groupId+'/files'">资料</RouterLink><RouterLink :to="'/groups/'+groupId+'/checkin'">打卡</RouterLink></nav>
+      <div class="group-cover group-card">
+        <div class="group-avatar large">{{ detail.group.name.slice(0, 1) }}</div>
+        <div class="cover-copy">
+          <p class="eyebrow">{{ detail.group.subject || '学习共同体' }} · {{ detail.group.visibility === 'public' ? '公开小组' : '私密小组'
+            }}</p>
+          <h1>{{ detail.group.name }}</h1>
+          <p>{{ detail.group.description }}</p>
+          <div class="tag-list"><span v-for="tag in (detail.group.tags || '').split(',').filter(Boolean)" :key="tag">#{{
+            tag.trim() }}</span></div>
+          <div class="tile-meta"><span>{{ detail.group.member_count }} 名成员</span><span>{{ detail.group.post_count }}
+              篇讨论</span><span>活跃度 {{ detail.group.activity_score }}</span></div>
+        </div>
+        <div class="cover-actions">
+          <RouterLink v-if="isManager" class="button ghost" :to="'/groups/' + groupId + '/settings'">设置</RouterLink><button
+            v-if="isOwner" class="button danger" @click="dissolveGroup">解散小组</button><button
+            v-if="detail.membership && !isOwner" class="button danger" @click="leave">退出小组</button><template
+            v-if="!detail.membership"><textarea
+              v-if="detail.group.join_mode !== 'free' || detail.group.visibility === 'private'" v-model="joinMessage"
+              placeholder="申请留言（可选）" rows="2"></textarea><button class="button primary" @click="join">{{
+                detail.group.join_mode === 'free' && detail.group.visibility === 'public' ? '加入小组' :'申请加入' }}</button></template>
+        </div>
+      </div>
+      <nav class="group-tabs">
+        <RouterLink :to="'/groups/' + groupId">讨论</RouterLink>
+        <RouterLink :to="'/groups/' + groupId + '/members'">成员 {{ detail.group.member_count }}</RouterLink>
+        <RouterLink :to="'/groups/' + groupId + '/files'">资料</RouterLink>
+        <RouterLink :to="'/groups/' + groupId + '/checkin'">打卡</RouterLink>
+      </nav>
 
-      <div v-if="section==='members'" class="group-card members-panel"><div class="panel-heading"><div><h2>小组成员</h2><p>成员角色、贡献和加入时间一目了然。</p></div><input v-model="memberSearch" placeholder="搜索成员"/></div><div class="member-list"><div v-for="m in visibleMembers" :key="m.user_id" class="member-row"><div class="member-avatar">{{ m.username.slice(0,1) }}</div><div><b>{{ m.username }}</b><small>{{ m.points }} 积分 · 加入于 {{ date(m.joined_at) }}</small></div><span class="role-label">{{ m.role==='owner'?'组长':m.role==='admin'?'管理员':'成员' }}</span><div v-if="isOwner && m.role!=='owner'" class="member-actions"><select :value="m.role" @change="changeRole(m.user_id,$event)"><option value="member">成员</option><option value="admin">管理员</option><option value="owner">转让组长</option></select><button class="text-button danger" @click="removeMember(m)">移除</button></div></div></div></div>
-      <div v-else-if="section==='files'" class="group-card files-panel"><div class="panel-heading"><div><h2>学习资料</h2><p>把有用的讲义、题单和复习资料沉淀下来。</p></div></div><form v-if="detail.membership" class="inline-form" @submit.prevent="addFile"><input v-model="fileForm.name" placeholder="资料名称" required/><input v-model="fileForm.path" placeholder="文件路径（可先上传文件）" required/><label class="upload-label">选择文件<input type="file" accept=".pdf,.txt,.md,.csv,.zip,.rar,.7z,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*" @change="uploadGroupFile"/></label><label class="choice"><input v-model="fileForm.allowDownload" type="checkbox"/>允许下载</label><button class="button primary">上传资料</button></form><div class="file-list"><div v-for="file in detail.files" :key="file.id" class="file-item"><a :href="file.allow_download?file.path:undefined" :class="['file-row',!file.allow_download?'blocked':'']" target="_blank"><span class="file-icon">↗</span><span><b>{{ file.name }}</b><small>{{ file.uploader_username }} · {{ Math.ceil(file.size_bytes/1024) }} KB</small></span><em>{{ file.allow_download?'下载':'仅查看' }}</em></a><button v-if="canDeleteFile(file)" class="file-delete" type="button" title="删除资料" aria-label="删除资料" @click="removeFile(file)"><Trash2 :size="14" /> 删除</button></div><p v-if="!detail.files?.length" class="file-empty">还没有资料，上传第一份复习资料吧。</p></div></div>
-      <div v-else-if="section==='checkin'" class="group-card checkin-panel"><div class="panel-heading"><div><h2>打卡任务</h2><p>小步完成，持续积累。完成后会记录在小组动态中。</p></div></div><form v-if="isManager" class="inline-form" @submit.prevent="createCheckin"><input v-model="checkinForm.title" placeholder="任务标题" required/><input v-model="checkinForm.description" placeholder="要求或说明"/><input v-model="checkinForm.dueAt" type="datetime-local"/><button class="button primary">创建任务</button></form><div class="checkin-list"><div v-for="item in detail.checkins" :key="item.id" class="checkin-row"><div><b>{{ item.title }}</b><p>{{ item.description }}</p><small>已完成 {{ item.completed_count }} 人<span v-if="item.due_at"> · 截止 {{ item.due_at }}</span></small></div><button v-if="detail.membership" class="button" :class="item.completed?'ghost':'primary'" :disabled="item.completed" @click="completeCheckin(item.id)">{{ item.completed?'已完成':'完成打卡' }}</button></div></div></div>
-      <div v-else class="group-content"><main><div v-if="isManager" class="group-card composer-card"><h2>发起一场讨论</h2><form @submit.prevent="publishPost"><input v-model="postForm.title" placeholder="讨论标题" required/><textarea v-model="postForm.content" rows="4" placeholder="分享你的问题、方法或资料……" required></textarea><div class="inline-form"><input v-model="postForm.tags" placeholder="标签，逗号分隔"/><button class="button primary">发布帖子</button></div></form></div><article v-for="post in detail.posts" :key="post.id" class="group-card post-card"><div class="post-head"><div class="member-avatar">{{ post.author_username.slice(0,1) }}</div><div><b>{{ post.author_username }}</b><small>{{ date(post.created_at) }} <span v-if="post.is_top">· 置顶</span><span v-if="post.is_featured">· 精华</span></small></div><span v-if="post.is_top" class="post-badge">置顶</span></div><RouterLink :to="'/groups/'+groupId+'/posts/'+post.id" class="post-title">{{ post.title }}</RouterLink><p class="post-content">{{ post.content }}</p><div class="post-footer"><button @click="togglePost(post,'like')">♡ {{ post.like_count }}</button><button @click="togglePost(post,'favorite')">☆ {{ post.favorite_count }}</button><RouterLink :to="'/groups/'+groupId+'/posts/'+post.id">{{ post.reply_count }} 条回复</RouterLink><div v-if="isManager" class="moderation"><button @click="moderate(post,{isTop:!post.is_top})">{{ post.is_top?'取消置顶':'置顶' }}</button><button @click="moderate(post,{isFeatured:!post.is_featured})">{{ post.is_featured?'取消加精':'加精' }}</button></div></div></article><div v-if="!detail.posts?.length" class="empty-state group-card">小组还没有讨论，成为第一个发起话题的人吧。</div></main><aside><div v-if="isManager && joinRequests.filter((r:any)=>r.status==='pending').length" class="group-card request-card"><div class="panel-heading"><div><h2>加入申请</h2><span>组长或管理员审核</span></div></div><div v-for="request in joinRequests.filter((r:any)=>r.status==='pending')" :key="request.id" class="request-row"><div><b>{{ request.username }}</b><p>{{ request.message || '申请加入这个学习小组' }}</p><small>{{ date(request.created_at) }}</small></div><div class="request-actions"><button class="button primary" @click="reviewRequest(request,'approved')">同意</button><button class="button ghost" @click="reviewRequest(request,'rejected')">拒绝</button></div></div></div><div class="group-card announcement-card"><div class="panel-heading"><h2>群公告</h2><span v-if="isManager">管理员可发布</span></div><form v-if="isManager" @submit.prevent="publishAnnouncement"><input v-model="announceForm.title" placeholder="公告标题" required/><textarea v-model="announceForm.content" rows="3" placeholder="写下重要通知" required></textarea><button class="button">发布公告</button></form><div v-for="a in detail.announcements" :key="a.id" class="announcement"><b>{{ a.title }}</b><p>{{ a.content }}</p><small>{{ a.author_username }} · {{ date(a.created_at) }}</small></div><p v-if="!detail.announcements?.length" class="muted">暂无公告</p></div><div class="group-card stats-card"><h2>小组活跃度</h2><div><b>{{ detail.group.member_count }}</b><span>成员</span></div><div><b>{{ detail.group.post_count }}</b><span>讨论</span></div><div><b>{{ detail.group.activity_score }}</b><span>活跃分</span></div></div></aside></div>
+      <div v-if="section === 'members'" class="group-card members-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>小组成员</h2>
+            <p>成员角色、贡献和加入时间一目了然。</p>
+          </div><input v-model="memberSearch" placeholder="搜索成员" />
+        </div>
+        <div class="member-list">
+          <div v-for="m in visibleMembers" :key="m.user_id" class="member-row">
+            <div class="member-avatar">{{ m.username.slice(0, 1) }}</div>
+            <div><b>{{ m.username }}</b><small>{{ m.points }} 积分 · 加入于 {{ date(m.joined_at) }}</small></div><span
+              class="role-label">{{ m.role === 'owner' ? '组长' : m.role === 'admin' ? '管理员' : '成员' }}</span>
+            <div v-if="isOwner && m.role !== 'owner'" class="member-actions"><select :value="m.role"
+                @change="changeRole(m.user_id, $event)">
+                <option value="member">成员</option>
+                <option value="admin">管理员</option>
+                <option value="owner">转让组长</option>
+              </select><button class="text-button danger" @click="removeMember(m)">移除</button></div>
+          </div>
+        </div>
+      </div>
+      <div v-else-if="section === 'files'" class="group-card files-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>学习资料</h2>
+            <p>把有用的讲义、题单和复习资料沉淀下来。</p>
+          </div>
+        </div>
+        <form v-if="detail.membership" class="inline-form" @submit.prevent="addFile"><input v-model="fileForm.name"
+            placeholder="资料名称" required /><input v-model="fileForm.path" placeholder="文件路径（可先上传文件）" required /><label
+            class="upload-label">选择文件<input type="file"
+              accept=".pdf,.txt,.md,.csv,.zip,.rar,.7z,.doc,.docx,.xls,.xlsx,.ppt,.pptx,image/*"
+              @change="uploadGroupFile" /></label><label class="choice"><input v-model="fileForm.allowDownload"
+              type="checkbox" />允许下载</label><button class="button primary">上传资料</button></form>
+        <div class="file-list">
+          <div v-for="file in detail.files" :key="file.id" class="file-item"><a
+              :href="file.allow_download ? file.path : undefined" :class="['file-row', !file.allow_download ? 'blocked' : '']"
+              target="_blank"><span class="file-icon">↗</span><span><b>{{ file.name }}</b><small>{{
+                file.uploader_username }}
+                  · {{ Math.ceil(file.size_bytes / 1024) }} KB</small></span><em>{{ file.allow_download ? '下载' : '仅查看'
+                }}</em></a><button v-if="canDeleteFile(file)" class="file-delete" type="button" title="删除资料"
+              aria-label="删除资料" @click="removeFile(file)">
+              <Trash2 :size="14" /> 删除
+            </button></div>
+          <p v-if="!detail.files?.length" class="file-empty">还没有资料，上传第一份复习资料吧。</p>
+        </div>
+      </div>
+      <div v-else-if="section === 'checkin'" class="group-card checkin-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>打卡任务</h2>
+            <p>小步完成，持续积累。完成后会记录在小组动态中。</p>
+          </div>
+        </div>
+        <form v-if="isManager" class="inline-form" @submit.prevent="createCheckin"><input v-model="checkinForm.title"
+            placeholder="任务标题" required /><input v-model="checkinForm.description" placeholder="要求或说明" /><input
+            v-model="checkinForm.dueAt" type="datetime-local" /><button class="button primary">创建任务</button></form>
+        <div class="checkin-list">
+          <div v-for="item in detail.checkins" :key="item.id" class="checkin-row">
+            <div><b>{{ item.title }}</b>
+              <p>{{ item.description }}</p><small>已完成 {{ item.completed_count }} 人<span v-if="item.due_at"> · 截止 {{
+                  item.due_at }}</span></small>
+            </div><button v-if="detail.membership" class="button" :class="item.completed ? 'ghost' : 'primary'"
+              :disabled="item.completed" @click="completeCheckin(item.id)">{{ item.completed ? '已完成' : '完成打卡' }}</button>
+          </div>
+        </div>
+      </div>
+      <div v-else class="group-content">
+        <main>
+          <div v-if="isManager" class="group-card composer-card">
+            <h2>发起一场讨论</h2>
+            <form @submit.prevent="publishPost"><input v-model="postForm.title" placeholder="讨论标题" required /><textarea
+                v-model="postForm.content" rows="4" placeholder="分享你的问题、方法或资料……" required></textarea>
+              <div class="inline-form"><input v-model="postForm.tags" placeholder="标签，逗号分隔" /><button
+                  class="button primary">发布帖子</button></div>
+            </form>
+          </div>
+          <article v-for="post in detail.posts" :key="post.id" class="group-card post-card">
+            <div class="post-head">
+              <div class="member-avatar">{{ post.author_username.slice(0, 1) }}</div>
+              <div><b>{{ post.author_username }}</b><small>{{ date(post.created_at) }} <span v-if="post.is_top">·
+                    置顶</span><span v-if="post.is_featured">· 精华</span></small></div><span v-if="post.is_top"
+                class="post-badge">置顶</span>
+            </div>
+            <RouterLink :to="'/groups/' + groupId + '/posts/' + post.id" class="post-title">{{ post.title }}</RouterLink>
+            <p class="post-content">{{ post.content }}</p>
+            <div class="post-footer"><button @click="togglePost(post, 'like')">♡ {{ post.like_count }}</button><button
+                @click="togglePost(post, 'favorite')">☆ {{ post.favorite_count }}</button>
+              <RouterLink :to="'/groups/' + groupId + '/posts/' + post.id">{{ post.reply_count }} 条回复</RouterLink>
+              <div v-if="isManager" class="moderation"><button @click="moderate(post, { isTop: !post.is_top })">{{
+                post.is_top ? '取消置顶':'置顶' }}</button><button @click="moderate(post, { isFeatured: !post.is_featured })">{{
+                    post.is_featured ? '取消加精':'加精' }}</button></div>
+            </div>
+          </article>
+          <div v-if="!detail.posts?.length" class="empty-state group-card">小组还没有讨论，成为第一个发起话题的人吧。</div>
+        </main>
+        <aside>
+          <div v-if="isManager && joinRequests.filter((r: any) => r.status === 'pending').length"
+            class="group-card request-card">
+            <div class="panel-heading">
+              <div>
+                <h2>加入申请</h2><span>组长或管理员审核</span>
+              </div>
+            </div>
+            <div v-for="request in joinRequests.filter((r: any) => r.status === 'pending')" :key="request.id"
+              class="request-row">
+              <div><b>{{ request.username }}</b>
+                <p>{{ request.message || '申请加入这个学习小组' }}</p><small>{{ date(request.created_at) }}</small>
+              </div>
+              <div class="request-actions"><button class="button primary"
+                  @click="reviewRequest(request, 'approved')">同意</button><button class="button ghost"
+                  @click="reviewRequest(request, 'rejected')">拒绝</button></div>
+            </div>
+          </div>
+          <div class="group-card announcement-card">
+            <div class="panel-heading">
+              <h2>群公告</h2><span v-if="isManager">管理员可发布</span>
+            </div>
+            <form v-if="isManager" @submit.prevent="publishAnnouncement"><input v-model="announceForm.title"
+                placeholder="公告标题" required /><textarea v-model="announceForm.content" rows="3" placeholder="写下重要通知"
+                required></textarea><button class="button">发布公告</button></form>
+            <div v-for="a in detail.announcements" :key="a.id" class="announcement"><b>{{ a.title }}</b>
+              <p>{{ a.content }}</p><small>{{ a.author_username }} · {{ date(a.created_at) }}</small>
+            </div>
+            <p v-if="!detail.announcements?.length" class="muted">暂无公告</p>
+          </div>
+          <div class="group-card stats-card">
+            <h2>小组活跃度</h2>
+            <div><b>{{ detail.group.member_count }}</b><span>成员</span></div>
+            <div><b>{{ detail.group.post_count }}</b><span>讨论</span></div>
+            <div><b>{{ detail.group.activity_score }}</b><span>活跃分</span></div>
+          </div>
+        </aside>
+      </div>
     </template>
-    <div v-else-if="route.path.includes('/posts/') && detail" class="group-card post-detail"><RouterLink :to="'/groups/'+groupId">← 返回小组</RouterLink><h1>{{ detail.title }}</h1><p class="post-content">{{ detail.content }}</p><div class="post-footer"><button @click="togglePost(detail,'like')">♡ {{ detail.like_count }}</button><button @click="togglePost(detail,'favorite')">☆ {{ detail.favorite_count }}</button></div><h2>回复</h2><div v-for="r in detail.replies" :key="r.id" class="reply-row"><b>{{ r.author_username }}</b><small>{{ date(r.created_at) }}</small><p>{{ r.content }}</p></div><form v-if="detail.membership || session.user" class="reply-form" @submit.prevent="replyPost"><textarea v-model="reply" rows="3" placeholder="写下你的回复"></textarea><button class="button primary">回复</button></form></div>
+    <div v-else-if="route.path.includes('/posts/') && detail" class="group-card post-detail">
+      <RouterLink :to="'/groups/' + groupId">← 返回小组</RouterLink>
+      <h1>{{ detail.title }}</h1>
+      <p class="post-content">{{ detail.content }}</p>
+      <div class="post-footer"><button @click="togglePost(detail, 'like')">♡ {{ detail.like_count }}</button><button
+          @click="togglePost(detail, 'favorite')">☆ {{ detail.favorite_count }}</button></div>
+      <h2>回复</h2>
+      <div v-for="r in detail.replies" :key="r.id" class="reply-row"><b>{{ r.author_username }}</b><small>{{
+        date(r.created_at) }}</small>
+        <p>{{ r.content }}</p>
+      </div>
+      <form v-if="detail.membership || session.user" class="reply-form" @submit.prevent="replyPost"><textarea
+          v-model="reply" rows="3" placeholder="写下你的回复"></textarea><button class="button primary">回复</button></form>
+    </div>
     <ConfirmDialog :open="!!pendingAction" :title="confirmDialog.title" :subject="confirmDialog.subject"
       :description="confirmDialog.description" :confirm-text="confirmDialog.confirmText"
-      :pending-text="confirmDialog.pendingText" :pending="actionPending"
-      @cancel="pendingAction = null" @confirm="runPendingAction">
+      :pending-text="confirmDialog.pendingText" :pending="actionPending" @cancel="pendingAction = null"
+      @confirm="runPendingAction">
       <template #icon>
         <Trash2 v-if="confirmDialog.icon === 'dissolve' || confirmDialog.icon === 'file'" :size="18" />
         <UserMinus v-else-if="confirmDialog.icon === 'remove'" :size="18" />
