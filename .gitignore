@@ -8,3 +8,5 @@ uploads/
 .npm-cache/
 *.tsbuildinfo
 progress.md
+start-backend.cmd
+start-frontend.cmd
