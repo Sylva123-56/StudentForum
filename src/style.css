@@ -1128,16 +1128,26 @@ footer span {
 .mark-all-read {
     flex: none;
     padding: 8px 12px;
-    border: 1px solid #b7d6ca;
+    border: 1px solid #0b7771;
     border-radius: 5px;
-    background: #f4faf7;
-    color: #0b7771;
+    background: #0b7771;
+    color: #fff;
     font-size: 12px;
+    font-weight: 650;
     white-space: nowrap
 }
 
-.mark-all-read:hover {
-    background: #e6f3ed
+.mark-all-read:hover:not(:disabled) {
+    border-color: #08625d;
+    background: #08625d
+}
+
+.mark-all-read:disabled {
+    border-color: #dde4e1;
+    background: #f1f4f2;
+    color: #a4b4ae;
+    opacity: 1;
+    cursor: not-allowed
 }
 
 .profile-form {
@@ -1264,6 +1274,24 @@ footer span {
     padding: 7px 13px
 }
 
+.admin-list .announcement-text {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0
+}
+
+.admin-list .announcement-text strong {
+    display: block;
+    min-width: 0;
+    line-height: 1.65;
+    word-break: break-word
+}
+
+.admin-list .announcement-text small {
+    display: block;
+    margin-top: 6px
+}
+
 .admin-row-actions {
     display: flex;
     flex: none;
@@ -1333,6 +1361,21 @@ footer span {
     margin: 0 0 16px;
     color: #617772;
     font-size: 13px
+}
+
+.announcement-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin: 0 0 26px;
+    color: #8a9c95;
+    font-size: 12px
+}
+
+.announcement-meta .over {
+    color: #b6574d;
+    font-weight: 650
 }
 
 .admin-search {

@@ -42,8 +42,9 @@ watch(() => props.open, async open => { if (open) { await nextTick(); cancelButt
     position: fixed;
     inset: 0;
     z-index: 2000;
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 22px;
     background: rgba(16, 43, 40, .38);
     backdrop-filter: blur(3px);
@@ -51,7 +52,8 @@ watch(() => props.open, async open => { if (open) { await nextTick(); cancelButt
 }
 
 .delete-confirm {
-    width: min(420px, 100%);
+    width: 100%;
+    max-width: 420px;
     background: #fff;
     border-radius: 14px;
     padding: 26px 26px 20px;

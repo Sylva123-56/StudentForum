@@ -4,6 +4,7 @@ import {useRoute, useRouter} from 'vue-router'
 import {Search, Bell, Plus, Menu, X} from 'lucide-vue-next'
 import {useSession} from './store'
 import {api, send, type Board} from './api'
+import AnnouncementDialog from './views/AnnouncementDialog.vue'
 
 const route = useRoute(), router = useRouter(), session = useSession()
 const boards = ref<Board[]>([]), query = ref(''), menu = ref(false)
@@ -96,5 +97,6 @@ async function logout() {
       </main>
     </div>
     <footer>同频学习社区 · 保持好奇，认真交流 <span>请勿发布个人隐私或侵权内容</span></footer>
+    <AnnouncementDialog v-if="session.user" :key="session.user.id"/>
   </div>
 </template>

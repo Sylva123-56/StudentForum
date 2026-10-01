@@ -2,12 +2,14 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { api, send } from '../api'
+import { api, date, send } from '../api'
 import { useSession } from '../store'
+import ConfirmDialog from './ConfirmDialog.vue'
 type AdminBoard = { id: number; name: string; slug: string; description: string; sort_order: number; status: string }
 type AdminTag = { id: number; name: string; status: string }
 const route=useRoute(), router=useRouter(), session=useSession(), section=computed(() => String(route.params.section || 'dashboard'))
 const dashboard=ref<any>({}), users=ref<any[]>([]), posts=ref<any[]>([]), reports=ref<any[]>([]), boards=ref<AdminBoard[]>([]), tags=ref<AdminTag[]>([]), logs=ref<any[]>([]), announcement=ref(''), appeals=ref<any[]>([]), reputationLogs=ref<any[]>([]), error=ref('')
+const announcements=ref<any[]>([]), announcementEditing=ref<any>(null), announcementDraft=ref(''), announcementToRemove=ref<any>(null), announcementDeleting=ref(false)
 const appealHandlingId=ref<number>(), appealNote=ref(''), appealSubmitting=ref(false)
 const boardForm=ref({id:0,name:'',slug:'',description:'',sortOrder:0}), boardFormOpen=ref(false)
 const tagForm=ref({id:0,name:''}), tagFormOpen=ref(false)
@@ -45,6 +47,7 @@ async function load() {
     else if (current==='users' && admin) { const [result,enabled]=await Promise.all([api<Paged>('/admin/users'+query()),api<AdminBoard[]>('/boards')]); users.value=result.items; hasNext.value=result.hasNext; boardOptions.value=enabled }
     else if (current==='boards' && admin) { const [boardResult,tagResult]=await Promise.all([api<Paged>('/admin/boards'+query()),api<Paged>('/admin/tags'+query(tagPage.value))]); boards.value=boardResult.items as AdminBoard[]; tags.value=tagResult.items as AdminTag[]; hasNext.value=boardResult.hasNext; tagHasNext.value=tagResult.hasNext }
     else if (current==='points' && admin) { const result=await api<Paged>('/admin/points'+query()); logs.value=result.items; hasNext.value=result.hasNext }
+    else if (current==='announcements' && admin) { const result=await api<Paged>('/admin/announcements'+query()); announcements.value=result.items; hasNext.value=result.hasNext }
     else if (current==='appeals' && admin) { const result=await api<Paged>('/admin/appeals'+query()); appeals.value=result.items; hasNext.value=result.hasNext }
     else if (current==='reputation' && admin) { const result=await api<Paged>('/admin/reputation'+query()); reputationLogs.value=result.items; hasNext.value=result.hasNext }
     else hasNext.value=false
@@ -102,6 +105,24 @@ async function handleAppeal(item:any,status:string) {
 }
 async function adjustReputation() { const user=await ElMessageBox.prompt('用户 ID','调整信誉分').catch(() => null); if (!user) return; const amount=await ElMessageBox.prompt('增减分值（-100 到 100）','调整信誉分').catch(() => null); if (!amount) return; const reason=await ElMessageBox.prompt('调整理由','调整信誉分').catch(() => null); if (reason) change('/admin/reputation/'+user.value,'PATCH',{amount:Number(amount.value),reason:reason.value}) }
 async function publishAnnouncement() { const message=announcement.value.trim(); if (message.length<5) return ElMessage.warning('公告内容至少需要 5 个字'); if (message.length>255) return ElMessage.warning('公告内容不能超过 255 个字'); await change('/admin/announcements','POST',{message}); announcement.value='' }
+function startEditAnnouncement(item:any) { announcementEditing.value=item; announcementDraft.value=item.message }
+function cancelEditAnnouncement() { announcementEditing.value=null; announcementDraft.value='' }
+async function saveAnnouncementEdit() {
+  const item=announcementEditing.value, message=announcementDraft.value.trim()
+  if (!item) return
+  if (message.length<5) return ElMessage.warning('公告内容至少需要 5 个字')
+  if (message.length>255) return ElMessage.warning('公告内容不能超过 255 个字')
+  try { await send('/admin/announcements/'+item.id,'PATCH',{message}); ElMessage.success('公告已更新'); cancelEditAnnouncement(); await load() }
+  catch (exception) { ElMessage.error((exception as Error).message) }
+}
+async function confirmRemoveAnnouncement() {
+  const item=announcementToRemove.value
+  if (!item || announcementDeleting.value) return
+  announcementDeleting.value=true
+  try { await send('/admin/announcements/'+item.id,'DELETE'); ElMessage.success('公告已删除'); await load() }
+  catch (exception) { ElMessage.error((exception as Error).message) }
+  finally { announcementDeleting.value=false; announcementToRemove.value=null }
+}
 </script>
 <template><div class="admin-page" v-if="session.user && ['admin','moderator'].includes(session.user.role)"><div class="page-heading"><span>社区治理</span><h1>管理后台</h1><p>保持讨论有序，让每一份认真回答被看见。</p></div><div class="admin-tabs"><RouterLink v-for="item in sections.filter(item=>session.user?.role==='admin' || !['users','boards','points','announcements','appeals','reputation'].includes(item[0]))" :key="item[0]" :to="item[0]==='dashboard'?'/admin':'/admin/'+item[0]" :class="{active:section===item[0]}">{{ item[1] }}</RouterLink></div><p v-if="error" class="error">{{ error }}</p>
   <form v-if="searchHint" class="admin-search" @submit.prevent="applySearch"><input v-model="searchInput" maxlength="60" type="search" :placeholder="searchHint" :aria-label="searchHint"/><button class="button primary" type="submit" :disabled="loading">{{ loading?'搜索中…':'搜索' }}</button><button v-if="keyword" class="button" type="button" @click="searchInput=''; applySearch()">清除</button></form>
@@ -123,6 +144,11 @@ async function publishAnnouncement() { const message=announcement.value.trim(); 
   <template v-if="section==='points'"><h2>管理操作记录</h2><div class="admin-list"><div v-for="item in logs" :key="item.id"><strong>{{ item.action }}</strong><span>{{ item.target_type }} #{{ item.target_id }} · {{ item.detail }}</span></div></div></template>
   <template v-if="section==='appeals'"><h2>申诉管理</h2><div class="account-list"><article v-for="item in appeals" :key="item.id" class="v2-record"><strong>{{ item.username }} · {{ item.target_type }} #{{ item.target_id }} · {{ item.status }}</strong><p>{{ item.reason }}</p><small v-if="item.handle_note">处理备注：{{ item.handle_note }}</small><div v-if="item.status==='pending'"><button v-if="appealHandlingId!==item.id" class="button" @click="appealHandlingId=item.id; appealNote=''; error=''">填写处理意见</button><div v-else class="appeal-review"><label :for="'appeal-note-'+item.id">处理备注</label><textarea :id="'appeal-note-'+item.id" v-model="appealNote" maxlength="500" rows="3" placeholder="请填写处理结果与说明" :disabled="appealSubmitting"/><div class="v2-inline"><button class="button primary" :disabled="!appealNote.trim() || appealSubmitting" @click="handleAppeal(item,'resolved')">处理</button><button class="button" :disabled="!appealNote.trim() || appealSubmitting" @click="handleAppeal(item,'rejected')">驳回</button><button class="button" :disabled="appealSubmitting" @click="appealHandlingId=undefined; appealNote=''">取消</button></div></div></div></article></div></template>
   <template v-if="section==='reputation'"><button class="button primary" @click="adjustReputation">调整信誉分</button><div class="account-list"><article v-for="item in reputationLogs" :key="item.id" class="v2-record">{{ item.username }} · {{ item.amount>0?'+':'' }}{{ item.amount }} · 余额 {{ item.balance_after }} · {{ item.reason }}</article></div></template>
-  <template v-if="section==='announcements'"><h2>发布系统公告</h2><textarea v-model="announcement" rows="5" maxlength="255" placeholder="公告内容至少 5 个字，最多 255 个字"/><div class="announcement-meta"><span :class="{over:announcement.length>255}">{{ announcement.length }}/255</span><button class="button primary" :disabled="announcement.trim().length<5 || announcement.length>255" @click="publishAnnouncement">发布公告</button></div></template>
-  <nav v-if="searchHint && section!=='boards' && !loading && (hasNext || page>1)" class="pager" aria-label="后台分页"><button :disabled="page===1" @click="changePage(page-1)">上一页</button><span>第 {{ page }} 页</span><button :disabled="!hasNext" @click="changePage(page+1)">下一页</button></nav>
+  <template v-if="section==='announcements'"><h2>发布系统公告</h2><textarea v-model="announcement" rows="5" maxlength="255" placeholder="公告内容至少 5 个字，最多 255 个字"/><div class="announcement-meta"><span :class="{over:announcement.length>255}">{{ announcement.length }}/255</span><button class="button primary" :disabled="announcement.trim().length<5 || announcement.length>255" @click="publishAnnouncement">发布公告</button></div>
+    <form v-if="announcementEditing" class="admin-form" @submit.prevent="saveAnnouncementEdit"><h3>编辑第 {{ announcementEditing.id }} 条公告</h3><label>公告内容<textarea v-model="announcementDraft" rows="4" maxlength="255" required/></label><p class="admin-form-hint">只更新正文，已经读过这条公告的用户不会再被弹窗提醒一次。</p><div class="v2-inline"><button class="button primary" type="submit">保存</button><button class="button" type="button" @click="cancelEditAnnouncement">取消</button></div></form>
+    <div class="section-heading"><h2>已发布的公告</h2><span>本页 {{ announcements.length }} 条{{ hasNext ? '，还有下一页' : '' }}</span></div>
+    <div class="admin-list"><div v-for="item in announcements" :key="item.id"><span class="announcement-text"><strong>{{ item.message }}</strong><small>{{ item.admin_name }} · {{ date(item.created_at) }}<template v-if="item.updated_at"> · 已编辑</template> · 已读 {{ item.read_count }}/{{ item.recipients }}</small></span><span class="admin-row-actions"><button class="table-action" @click="startEditAnnouncement(item)">编辑</button><button class="table-action danger" @click="announcementToRemove=item">删除</button></span></div></div>
+    <p v-if="!loading && !announcements.length" class="admin-form-hint">还没有发布过公告。</p></template>
+  <nav v-if="(searchHint || section==='announcements') && section!=='boards' && !loading && (hasNext || page>1)" class="pager" aria-label="后台分页"><button :disabled="page===1" @click="changePage(page-1)">上一页</button><span>第 {{ page }} 页</span><button :disabled="!hasNext" @click="changePage(page+1)">下一页</button></nav>
+  <ConfirmDialog :open="Boolean(announcementToRemove)" title="删除这条公告" :subject="announcementToRemove?.message" description="删除后所有用户的通知列表里都会移除这条公告，且无法恢复。" confirm-text="确认删除" pending-text="删除中…" :pending="announcementDeleting" @confirm="confirmRemoveAnnouncement" @cancel="announcementToRemove=null"/>
   </div><div v-else class="empty">此页面仅供版主和管理员使用。</div></template>

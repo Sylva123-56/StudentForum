@@ -249,6 +249,16 @@ public class ForumController {
         mapper.readAll(service.id(auth));
     }
 
+    @GetMapping("/announcements/unread")
+    List<Map<String, Object>> unreadAnnouncements(Authentication auth) {
+        return mapper.announcements(service.id(auth), 20);
+    }
+
+    @PostMapping("/announcements/read-all")
+    void readAnnouncements(Authentication auth) {
+        mapper.readAnnouncements(service.id(auth));
+    }
+
     @PostMapping("/reports")
     void report(Authentication auth, @RequestBody Map<String, Object> input) {
         service.report(auth, input);

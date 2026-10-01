@@ -1,5 +1,6 @@
 package com.studentforum;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -166,11 +167,35 @@ public class AdminController {
         if (mapper.disableTag(id)==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签状态已发生变化");
         mapper.adminLog(service.id(auth),"disable","tag",id,String.valueOf(tag.get("name")));
     }
-    @PostMapping("/announcements") void announcement(Authentication auth,@RequestBody Map<String,String> input) {
-        service.admin(auth); String message=input.getOrDefault("message","").trim();
+    private String announcementMessage(Map<String,String> input) {
+        String message=input.getOrDefault("message","").trim();
         if (message.length()<5) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"公告内容至少需要 5 个字");
         if (message.length()>255) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"公告内容不能超过 255 个字");
-        for (long userId:mapper.allUserIds()) mapper.notifyUser(userId,"system",message,null);
-        mapper.adminLog(service.id(auth),"announcement","user",0,message);
+        return message;
+    }
+    @GetMapping("/announcements") Map<String,Object> announcements(Authentication auth,@RequestParam(defaultValue="1") int page) {
+        service.admin(auth); return paged(mapper.adminAnnouncements(PAGE_SIZE+1,offset(page)));
+    }
+    @PostMapping("/announcements") @Transactional void announcement(Authentication auth,@RequestBody Map<String,String> input) {
+        service.admin(auth); long actor=service.id(auth); String message=announcementMessage(input);
+        Map<String,Object> announcement=new HashMap<>();
+        announcement.put("adminId",actor); announcement.put("message",message);
+        mapper.insertAnnouncement(announcement);
+        long id=((Number)announcement.get("id")).longValue();
+        for (long userId:mapper.allUserIds()) mapper.notifyAnnouncement(userId,message,id);
+        // 自己发的公告直接算已读：管理员不该被自己的公告弹一次。
+        mapper.readOwnAnnouncement(id,actor);
+        mapper.adminLog(actor,"announcement","announcement",id,message);
+    }
+    @PatchMapping("/announcements/{id}") @Transactional void editAnnouncement(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+        service.admin(auth); service.require(mapper.announcementById(id));
+        String message=announcementMessage(input);
+        mapper.editAnnouncement(id,message); mapper.editAnnouncementMessages(id,message); mapper.readOwnAnnouncement(id,service.id(auth));
+        mapper.adminLog(service.id(auth),"edit","announcement",id,message);
+    }
+    @DeleteMapping("/announcements/{id}") void deleteAnnouncement(Authentication auth,@PathVariable long id) {
+        service.admin(auth); Map<String,Object> announcement=service.require(mapper.announcementById(id));
+        mapper.deleteAnnouncement(id);
+        mapper.adminLog(service.id(auth),"delete","announcement",id,String.valueOf(announcement.get("message")));
     }
 }

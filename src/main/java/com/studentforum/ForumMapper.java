@@ -44,6 +44,20 @@ public interface ForumMapper {
     @Select("SELECT COUNT(*) FROM notifications WHERE user_id=#{userId} AND is_read=FALSE") int unread(long userId);
     @Update("UPDATE notifications SET is_read=TRUE WHERE id=#{id} AND user_id=#{userId}") void read(@Param("userId") long userId,@Param("id") long id);
     @Update("UPDATE notifications SET is_read=TRUE WHERE user_id=#{userId}") void readAll(long userId);
+    // 系统公告就是管理员群发的 system 通知（post_id 为空）；带 post_id 的 system 通知是定时发帖回执，不算公告。
+    @Select("SELECT id,message,created_at FROM notifications WHERE user_id=#{userId} AND kind='system' AND post_id IS NULL AND is_read=FALSE ORDER BY created_at DESC,id DESC LIMIT #{limit}") List<Map<String,Object>> announcements(@Param("userId") long userId,@Param("limit") int limit);
+    @Update("UPDATE notifications SET is_read=TRUE WHERE user_id=#{userId} AND kind='system' AND post_id IS NULL") void readAnnouncements(long userId);
+    // 管理后台的公告列表：announcements 一行就是一条公告，顺带算出接收人数与已读人数。
+    @Select("SELECT a.id,a.message,a.created_at,a.updated_at,u.username AS admin_name,(SELECT COUNT(*) FROM notifications n WHERE n.announcement_id=a.id) AS recipients,(SELECT COUNT(*) FROM notifications n WHERE n.announcement_id=a.id AND n.is_read=TRUE) AS read_count FROM announcements a JOIN users u ON u.id=a.admin_id ORDER BY a.id DESC LIMIT #{limit} OFFSET #{offset}") List<Map<String,Object>> adminAnnouncements(@Param("limit") int limit,@Param("offset") int offset);
+    @Select("SELECT * FROM announcements WHERE id=#{id}") Map<String,Object> announcementById(long id);
+    @Insert("INSERT INTO announcements(admin_id,message) VALUES(#{adminId},#{message})") @Options(useGeneratedKeys=true,keyProperty="id") void insertAnnouncement(Map<String,Object> announcement);
+    @Update("UPDATE announcements SET message=#{message},updated_at=NOW() WHERE id=#{id}") void editAnnouncement(@Param("id") long id,@Param("message") String message);
+    // 改了公告正文，它派生出去的那批通知行也要跟着改，否则用户通知列表里还是旧文案。
+    @Update("UPDATE notifications SET message=#{message} WHERE announcement_id=#{id}") void editAnnouncementMessages(@Param("id") long id,@Param("message") String message);
+    // 删除靠 notifications.announcement_id 的 ON DELETE CASCADE 自动清掉派生通知行。
+    @Delete("DELETE FROM announcements WHERE id=#{id}") void deleteAnnouncement(long id);
+    @Insert("INSERT INTO notifications(user_id,kind,message,post_id,announcement_id) VALUES(#{userId},'system',#{message},NULL,#{announcementId})") void notifyAnnouncement(@Param("userId") long userId,@Param("message") String message,@Param("announcementId") long announcementId);
+    @Update("UPDATE notifications SET is_read=TRUE WHERE announcement_id=#{announcementId} AND user_id=#{userId}") void readOwnAnnouncement(@Param("announcementId") long announcementId,@Param("userId") long userId);
     @Select("SELECT COUNT(*) FROM point_logs WHERE user_id=#{userId} AND action=#{action} AND DATE(created_at)=CURRENT_DATE()") int dailyPoints(@Param("userId") long userId,@Param("action") String action);
     @Select("SELECT COUNT(*) FROM point_logs WHERE user_id=#{userId} AND action=#{action} AND ref_type=#{refType} AND ref_id=#{refId}") int rewardExists(@Param("userId") long userId,@Param("action") String action,@Param("refType") String refType,@Param("refId") long refId);
     @Update("UPDATE users SET points=GREATEST(0,points+#{amount}) WHERE id=#{userId}") void addPoints(@Param("userId") long userId,@Param("amount") int amount);

@@ -209,7 +209,7 @@ async function confirmDeletePost() {
               :key="item.id" :class="{active:tab===item.id}" @click="tab=item.id">{{ item.name }}<span
               v-if="item.id==='notifications' && session.unread"> {{ session.unread }}</span></button>
         </div>
-        <button v-if="tab==='notifications' && notifications.length" class="mark-all-read" type="button" @click="readAll">全部标记已读</button>
+        <button v-if="tab==='notifications'" class="mark-all-read" type="button" :disabled="!session.unread" @click="readAll">全部标记已读</button>
       </div>
       <form v-if="tab==='profile'" class="profile-form" @submit.prevent="save">
         <div class="form-row"><label>学校<input v-model="profile.school" maxlength="100"
