@@ -1,18 +1,27 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Feed from './views/Feed.vue'
-import PostDetail from './views/PostDetail.vue'
-import Compose from './views/Compose.vue'
-import Account from './views/Account.vue'
-import Auth from './views/Auth.vue'
-import Admin from './views/Admin.vue'
-import V2Hub from './views/V2Hub.vue'
-import Groups from './views/Groups.vue'
 import { useSession } from './store'
+// 每个视图单独成 chunk：首屏只下载当前页面用到的代码，其余页面跳转时才按需加载
+const Feed = () => import('./views/Feed.vue')
+const PostDetail = () => import('./views/PostDetail.vue')
+const Compose = () => import('./views/Compose.vue')
+const Account = () => import('./views/Account.vue')
+const Auth = () => import('./views/Auth.vue')
+const Admin = () => import('./views/Admin.vue')
+const V2Hub = () => import('./views/V2Hub.vue')
+const Groups = () => import('./views/Groups.vue')
+const Checkin = () => import('./views/Checkin.vue')
+const Focus = () => import('./views/Focus.vue')
+const Plans = () => import('./views/Plans.vue')
+const StudyRooms = () => import('./views/StudyRooms.vue')
 const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/', component: Feed }, { path: '/boards', component: Feed }, { path: '/boards/:id', component: Feed }, { path: '/search', component: Feed }, { path: '/featured', component: Feed }, { path: '/tags/:id', component: Feed },
   { path: '/groups', component: Groups }, { path: '/groups/new', component: Groups, meta: { login: true } },
   { path: '/groups/:id/settings', component: Groups, meta: { login: true } }, { path: '/groups/:id/members', component: Groups }, { path: '/groups/:id/files', component: Groups }, { path: '/groups/:id/checkin', component: Groups }, { path: '/groups/:id/posts/:postId', component: Groups }, { path: '/groups/:id', component: Groups },
   { path: '/posts/new', component: Compose, meta: { login: true } }, { path: '/posts/:id', component: PostDetail },
+  { path: '/checkin', component: Checkin, meta: { login: true } }, { path: '/checkin/goals', component: Checkin, meta: { login: true } },
+  { path: '/focus', component: Focus, meta: { login: true } }, { path: '/focus/stats', component: Focus, meta: { login: true } },
+  { path: '/plans', component: Plans, meta: { login: true } }, { path: '/plans/templates', component: Plans, meta: { login: true } }, { path: '/plans/:id', component: Plans, meta: { login: true } },
+  { path: '/study-rooms', component: StudyRooms }, { path: '/study-rooms/:id', component: StudyRooms },
   { path: '/login', component: Auth }, { path: '/register', component: Auth },
   { path: '/me', component: Account, meta: { login: true } }, { path: '/me/notifications', component: Account, meta: { login: true } },
   { path: '/users/:id', component: Account },

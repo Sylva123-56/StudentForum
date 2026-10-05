@@ -25,7 +25,9 @@ public class SecurityConfig {
         http.securityContext(config -> config.securityContextRepository(repository))
             .csrf(config -> config.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
             .authorizeHttpRequests(config -> config.requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "MODERATOR")
-                .requestMatchers(HttpMethod.GET, "/api/groups/**", "/api/boards/**", "/api/posts/*", "/api/posts/*/replies", "/api/posts/*/vote", "/api/posts/*/bounty", "/api/posts/*/revisions/**", "/api/search", "/api/tags/**", "/api/levels", "/api/users/**", "/uploads/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/groups/**", "/api/boards/**", "/api/posts/*", "/api/posts/*/replies", "/api/posts/*/vote", "/api/posts/*/bounty", "/api/posts/*/revisions/**", "/api/search", "/api/tags/**", "/api/levels", "/api/users/**", "/uploads/**",
+                        // 学习工具里只把"围观类"的读接口放开给游客：公开自习室列表/详情、专注排行；打卡、计划、专注统计都要求登录
+                        "/api/study-rooms", "/api/study-rooms/*", "/api/study-rooms/*/leaderboard", "/api/focus/leaderboard").permitAll()
                 .requestMatchers("/api/auth/register", "/api/auth/login", "/api/csrf", "/", "/index.html", "/assets/**").permitAll()
                 .anyRequest().authenticated())
             .exceptionHandling(config -> config.authenticationEntryPoint((request,response,error) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))

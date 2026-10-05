@@ -36,6 +36,10 @@ async function logout() {
           <RouterLink to="/boards">板块</RouterLink>
           <RouterLink to="/featured">精华</RouterLink>
           <RouterLink to="/groups">小组</RouterLink>
+          <RouterLink to="/checkin">打卡</RouterLink>
+          <RouterLink to="/focus">专注</RouterLink>
+          <RouterLink to="/plans">计划</RouterLink>
+          <RouterLink to="/study-rooms">自习室</RouterLink>
           <RouterLink v-if="session.user" to="/feed/following">关注</RouterLink>
         </nav>
         <form class="header-search" @submit.prevent="search">
@@ -66,6 +70,10 @@ async function logout() {
       <RouterLink to="/boards" @click="menu=false">板块</RouterLink>
       <RouterLink to="/featured" @click="menu=false">精华</RouterLink>
       <RouterLink to="/groups" @click="menu=false">学习小组</RouterLink>
+      <RouterLink to="/checkin" @click="menu=false">学习打卡</RouterLink>
+      <RouterLink to="/focus" @click="menu=false">番茄钟</RouterLink>
+      <RouterLink to="/plans" @click="menu=false">学习计划</RouterLink>
+      <RouterLink to="/study-rooms" @click="menu=false">自习室</RouterLink>
       <RouterLink to="/posts/new" @click="menu=false">发布帖子</RouterLink>
       <RouterLink v-if="session.user" to="/me" @click="menu=false">个人中心</RouterLink>
       <form @submit.prevent="search"><input v-model="query" placeholder="搜索帖子标题"/>
@@ -78,6 +86,11 @@ async function logout() {
         <RouterLink to="/" class="side-link">全部讨论</RouterLink>
         <RouterLink to="/featured" class="side-link">精选内容</RouterLink>
         <RouterLink to="/groups" class="side-link">学习小组</RouterLink>
+        <div class="sidebar-label boards-label">学习工具</div>
+        <RouterLink to="/checkin" class="side-link">学习打卡</RouterLink>
+        <RouterLink to="/focus" class="side-link">番茄钟</RouterLink>
+        <RouterLink to="/plans" class="side-link">学习计划</RouterLink>
+        <RouterLink to="/study-rooms" class="side-link">自习室</RouterLink>
         <RouterLink v-if="session.user" to="/feed/following" class="side-link">关注动态</RouterLink>
         <RouterLink v-if="session.user" to="/messages" class="side-link">私信</RouterLink>
         <RouterLink v-if="session.user" to="/me/drafts" class="side-link">草稿箱</RouterLink>
