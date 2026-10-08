@@ -91,10 +91,12 @@ async function logout() {
         <RouterLink to="/focus" class="side-link">番茄钟</RouterLink>
         <RouterLink to="/plans" class="side-link">学习计划</RouterLink>
         <RouterLink to="/study-rooms" class="side-link">自习室</RouterLink>
-        <RouterLink v-if="session.user" to="/feed/following" class="side-link">关注动态</RouterLink>
-        <RouterLink v-if="session.user" to="/messages" class="side-link">私信</RouterLink>
-        <RouterLink v-if="session.user" to="/me/drafts" class="side-link">草稿箱</RouterLink>
-        <RouterLink v-if="session.user" to="/appeals" class="side-link">申诉</RouterLink>
+        <template v-if="session.user">
+          <div class="sidebar-label boards-label">我的</div>
+          <RouterLink to="/feed/following" class="side-link">关注动态</RouterLink>
+          <RouterLink to="/messages" class="side-link">私信</RouterLink>
+          <RouterLink to="/me/drafts" class="side-link">草稿箱</RouterLink>
+        </template>
         <div class="sidebar-label boards-label">学习板块</div>
         <RouterLink v-for="board in boards" :key="board.id" :to="'/boards/'+board.id" class="side-link">{{
             board.name
