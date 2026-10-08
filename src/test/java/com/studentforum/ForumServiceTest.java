@@ -83,4 +83,38 @@ class ForumServiceTest {
         service.handle(author,9,Map.of("action","reject","note","证据不足"));
         verify(mapper).notifyUser(2,"report","你的举报处理结果：已驳回。处理备注：证据不足",null);
     }
+
+    @Test void cannotReportOwnPost() {
+        when(mapper.post(5)).thenReturn(Map.of("id",5L,"author_id",1L,"status","published"));
+        ResponseStatusException exception=assertThrows(ResponseStatusException.class,() -> service.report(author,Map.of("targetType","post","targetId",5,"reason","广告垃圾")));
+        assertEquals("不能举报自己的帖子",exception.getReason());
+        verify(mapper,never()).report(anyLong(),anyString(),anyLong(),anyString(),anyString());
+    }
+
+    @Test void cannotReportOwnReply() {
+        when(mapper.reply(7)).thenReturn(Map.of("id",7L,"post_id",5L,"author_id",1L,"status","published"));
+        ResponseStatusException exception=assertThrows(ResponseStatusException.class,() -> service.report(author,Map.of("targetType","reply","targetId",7,"reason","人身攻击")));
+        assertEquals("不能举报自己的回复",exception.getReason());
+        verify(mapper,never()).report(anyLong(),anyString(),anyLong(),anyString(),anyString());
+    }
+
+    @Test void cannotReportSelf() {
+        when(mapper.user(1)).thenReturn(Map.of("id",1L,"status","active","role","student","reputation",100));
+        ResponseStatusException exception=assertThrows(ResponseStatusException.class,() -> service.report(author,Map.of("targetType","user","targetId",1,"reason","其他")));
+        assertEquals("不能举报自己",exception.getReason());
+        verify(mapper,never()).report(anyLong(),anyString(),anyLong(),anyString(),anyString());
+    }
+
+    @Test void canReportOtherAuthorPost() {
+        when(mapper.post(5)).thenReturn(Map.of("id",5L,"author_id",2L,"status","published"));
+        when(mapper.dailyReports(1)).thenReturn(0);
+        service.report(author,Map.of("targetType","post","targetId",5,"reason","抄袭侵权","description","第三段照搬"));
+        verify(mapper).report(1,"post",5,"抄袭侵权","第三段照搬");
+    }
+
+    @Test void reportRejectsUnknownReason() {
+        when(mapper.post(5)).thenReturn(Map.of("id",5L,"author_id",2L,"status","published"));
+        assertThrows(ResponseStatusException.class,() -> service.report(author,Map.of("targetType","post","targetId",5,"reason","随便写的理由")));
+        verify(mapper,never()).report(anyLong(),anyString(),anyLong(),anyString(),anyString());
+    }
 }

@@ -185,9 +185,19 @@ public class ForumService {
         String type = (String)input.get("targetType"), reason = (String)input.get("reason"), description = (String)input.getOrDefault("description","");
         if (type == null || !Set.of("post","reply","user").contains(type) || reason == null || !Set.of("广告垃圾","人身攻击","抄袭侵权","色情暴力","政治敏感","其他").contains(reason) || description.length() > 500) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"举报内容无效");
         long targetId = ((Number)input.get("targetId")).longValue();
-        if ("post".equals(type)) require(mapper.post(targetId));
-        if ("reply".equals(type)) require(mapper.reply(targetId));
-        if ("user".equals(type)) require(mapper.user(targetId));
+        long reporter = id(auth);
+        if ("post".equals(type)) {
+            Map<String,Object> post = require(mapper.post(targetId));
+            if (number(post,"author_id") == reporter) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"不能举报自己的帖子");
+        }
+        if ("reply".equals(type)) {
+            Map<String,Object> reply = require(mapper.reply(targetId));
+            if (number(reply,"author_id") == reporter) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"不能举报自己的回复");
+        }
+        if ("user".equals(type)) {
+            require(mapper.user(targetId));
+            if (targetId == reporter) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"不能举报自己");
+        }
         if (mapper.dailyReports(id(auth)) >= 5) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,"今日举报次数已达上限");
         mapper.report(id(auth),type,targetId,reason,description);
     }

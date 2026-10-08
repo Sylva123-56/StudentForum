@@ -5,6 +5,7 @@ import { Bookmark, Flag, CheckCircle2, MessageCircle, ArrowLeft } from 'lucide-v
 import { api, date, roleBadge, send, upload, type Post, type Reply } from '../api'
 import { useSession } from '../store'
 import ConfirmDialog from './ConfirmDialog.vue'
+import ReportDialog from './ReportDialog.vue'
 import RichContent from './RichContent.vue'
 const route = useRoute(), router = useRouter(), session = useSession(), post = ref<Post>(), replies = ref<Reply[]>([]), content = ref(''), image = ref(''), error = ref(''), editing = ref(false), title = ref(''), body = ref(''), vote = ref<any>(), bounty = ref<any>(), chosen = ref<number[]>([]), replySort = ref('earliest'), quoteId = ref<number>(), editReplyId = ref<number>(), replyBody = ref(''), replyHistory = ref<any[]>([])
 const id = Number(route.params.id)
@@ -14,7 +15,13 @@ async function act(action: () => Promise<unknown>) { try { error.value = ''; awa
 async function addImage(event: Event) { const file = (event.target as HTMLInputElement).files?.[0]; if (file) try { image.value = (await upload(file)).path } catch (exception) { error.value = (exception as Error).message } }
 async function reply() { if (await act(() => send(`/posts/${id}/replies`, 'POST', { content: content.value, imagePath: image.value || null, quoteReplyId: quoteId.value || null }))) { content.value = ''; image.value = ''; quoteId.value = undefined } }
 async function favorite() { if (!session.user) return router.push('/login'); await act(() => send(`/posts/${id}/favorite`, post.value?.favorited ? 'DELETE' : 'POST')) }
-async function report(type: string, targetId: number) { if (!session.user) return router.push('/login'); const reason = window.prompt('举报原因：广告垃圾 / 人身攻击 / 抄袭侵权 / 色情暴力 / 政治敏感 / 其他', '其他'); if (reason) await act(() => send('/reports', 'POST', { targetType: type, targetId, reason, description: '' })) }
+async function report(type: string, targetId: number, label: string, subject: string) { if (!session.user) return router.push('/login'); reporting.value = { type, targetId, label, subject } }
+const reporting = ref<{ type: string; targetId: number; label: string; subject: string }>(), reportPending = ref(false)
+async function submitReport(payload: { reason: string; description: string }) {
+    reportPending.value = true
+    try { if (await act(() => send('/reports', 'POST', { targetType: reporting.value?.type, targetId: reporting.value?.targetId, reason: payload.reason, description: payload.description }))) reporting.value = undefined }
+    finally { reportPending.value = false }
+}
 async function editReply(item: Reply) { editReplyId.value = item.id; replyBody.value = item.content; replyHistory.value = await api('/replies/' + item.id + '/revisions') }
 async function saveReply() { if (await act(() => send('/replies/' + editReplyId.value, 'PATCH', { content: replyBody.value }))) editReplyId.value = undefined }
 async function ballot() { await act(() => send('/posts/' + id + '/vote/ballots', 'POST', { optionIds: chosen.value })) }
@@ -70,7 +77,7 @@ async function removePost() {
         <div class="article-actions"><button @click="favorite">
                 <Bookmark :size="18" :fill="post.favorited ? 'currentColor' : 'none'" /> {{ post.favorited ? '已收藏' : '收藏' }} {{
                     post.favorite_count }}
-            </button><button @click="report('post', post.id)">
+            </button><button v-if="session.user?.id !== post.author_id" @click="report('post', post.id, '帖子', post.title)">
                 <Flag :size="17" /> 举报
             </button><template v-if="session.user?.id === post.author_id">
                 <button @click="editing = true">编辑</button>
@@ -112,7 +119,8 @@ async function removePost() {
                             @click="act(() => send(`/posts/${id}/accept/${item.id}`, 'POST'))">采纳为最佳答案</button><button
                             v-if="session.user" @click="quoteId = item.id">引用回复</button><button
                             v-if="session.user?.id === item.author_id" @click="editReply(item)">编辑 / 历史</button><button
-                            @click="report('reply', item.id)">举报</button><button
+                            v-if="session.user?.id !== item.author_id"
+                            @click="report('reply', item.id, '回复', item.content)">举报</button><button
                             v-if="session.user?.id === item.author_id && !item.is_accepted"
                             @click="act(() => send('/replies/' + item.id, 'DELETE'))">删除</button></div>
                 </div>
@@ -137,4 +145,7 @@ async function removePost() {
     <ConfirmDialog :open="confirmingDelete" title="删除帖子" :subject="post?.title"
         description="帖子正文、图片和全部回复会一并移除，无法恢复。" :pending="deleting"
         @cancel="confirmingDelete = false" @confirm="removePost" />
+    <ReportDialog :open="Boolean(reporting)" :target-label="reporting?.label || '内容'"
+        :subject="reporting?.subject" :pending="reportPending" @cancel="reporting = undefined"
+        @submit="submitReport" />
 </template>
