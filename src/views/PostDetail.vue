@@ -74,6 +74,7 @@ async function removePost() {
         <div class="tag-cloud article-tags">
             <RouterLink v-for="tag in post.tags" :key="tag.id" :to="'/tags/' + tag.id"># {{ tag.name }}</RouterLink>
         </div>
+        <div class="knowledge-post-links"><RouterLink :to="{path:'/mistakes/new',query:{postId:post.id,question:post.title}}">记录到错题本 →</RouterLink><RouterLink :to="'/wiki/'+post.board_id">查看板块 Wiki →</RouterLink></div>
         <div class="article-actions"><button @click="favorite">
                 <Bookmark :size="18" :fill="post.favorited ? 'currentColor' : 'none'" /> {{ post.favorited ? '已收藏' : '收藏' }} {{
                     post.favorite_count }}

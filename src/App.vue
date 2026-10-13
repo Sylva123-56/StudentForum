@@ -74,6 +74,7 @@ async function logout() {
       <RouterLink to="/focus" @click="menu=false">番茄钟</RouterLink>
       <RouterLink to="/plans" @click="menu=false">学习计划</RouterLink>
       <RouterLink to="/study-rooms" @click="menu=false">自习室</RouterLink>
+      <RouterLink v-for="item in [['resources','资料库'],['mistakes','错题本'],['notes','学习笔记'],['collections','专题合集'],['columns','连载专栏'],['wiki','板块 Wiki']]" :key="item[0]" :to="'/'+item[0]" @click="menu=false">{{ item[1] }}</RouterLink>
       <RouterLink to="/posts/new" @click="menu=false">发布帖子</RouterLink>
       <RouterLink v-if="session.user" to="/me" @click="menu=false">个人中心</RouterLink>
       <form @submit.prevent="search"><input v-model="query" placeholder="搜索帖子标题"/>
@@ -86,6 +87,8 @@ async function logout() {
         <RouterLink to="/" class="side-link">全部讨论</RouterLink>
         <RouterLink to="/featured" class="side-link">精选内容</RouterLink>
         <RouterLink to="/groups" class="side-link">学习小组</RouterLink>
+        <div class="sidebar-label boards-label">知识沉淀</div>
+        <RouterLink v-for="item in [['resources','资料库'],['mistakes','错题本'],['notes','学习笔记'],['collections','专题合集'],['columns','连载专栏'],['wiki','板块 Wiki']]" :key="item[0]" :to="'/'+item[0]" class="side-link">{{ item[1] }}</RouterLink>
         <div class="sidebar-label boards-label">学习工具</div>
         <RouterLink to="/checkin" class="side-link">学习打卡</RouterLink>
         <RouterLink to="/focus" class="side-link">番茄钟</RouterLink>

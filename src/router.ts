@@ -13,6 +13,7 @@ const Checkin = () => import('./views/Checkin.vue')
 const Focus = () => import('./views/Focus.vue')
 const Plans = () => import('./views/Plans.vue')
 const StudyRooms = () => import('./views/StudyRooms.vue')
+const Knowledge = () => import('./views/Knowledge.vue')
 const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/', component: Feed }, { path: '/boards', component: Feed }, { path: '/boards/:id', component: Feed }, { path: '/search', component: Feed }, { path: '/featured', component: Feed }, { path: '/tags/:id', component: Feed },
   { path: '/groups', component: Groups }, { path: '/groups/new', component: Groups, meta: { login: true } },
@@ -22,6 +23,13 @@ const router = createRouter({ history: createWebHistory(), routes: [
   { path: '/focus', component: Focus, meta: { login: true } }, { path: '/focus/stats', component: Focus, meta: { login: true } },
   { path: '/plans', component: Plans, meta: { login: true } }, { path: '/plans/templates', component: Plans, meta: { login: true } }, { path: '/plans/:id', component: Plans, meta: { login: true } },
   { path: '/study-rooms', component: StudyRooms }, { path: '/study-rooms/:id', component: StudyRooms },
+  ...['resources','mistakes','notes','collections','columns'].flatMap(kind => [
+    { path: '/'+kind, component: Knowledge },
+    { path: '/'+kind+'/new', component: Knowledge, meta: { login: true } },
+    { path: '/'+kind+'/:id', component: Knowledge }
+  ]),
+  { path: '/wiki', component: Knowledge }, { path: '/wiki/:boardId', component: Knowledge },
+  ...['resources','wiki','collections'].map(kind => ({ path: '/admin/'+kind, component: Knowledge, meta: { login: true } })),
   { path: '/login', component: Auth }, { path: '/register', component: Auth },
   { path: '/me', component: Account, meta: { login: true } }, { path: '/me/notifications', component: Account, meta: { login: true } },
   { path: '/users/:id', component: Account },

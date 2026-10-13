@@ -229,13 +229,14 @@ public class ForumService {
             if ("post".equals(type)) mapper.postStatus(targetId,"hide".equals(action)?"hidden":"deleted");
             if ("reply".equals(type)) mapper.deleteReply(targetId);
             if ("message".equals(type)) db.update("UPDATE messages SET content='[已删除]',type='text' WHERE id=?",targetId);
+            if ("resource".equals(type)) db.update("UPDATE resources SET status='rejected' WHERE id=?",targetId);
         }
         if (Set.of("mute","ban").contains(action)) {
-            long userId = "user".equals(type)?targetId:"post".equals(type)?number(mapper.post(targetId),"author_id"):"message".equals(type)?number(db.queryForList("SELECT sender_id FROM messages WHERE id=?",targetId).getFirst(),"sender_id"):number(mapper.reply(targetId),"author_id");
+            long userId = "user".equals(type)?targetId:"post".equals(type)?number(mapper.post(targetId),"author_id"):"resource".equals(type)?number(require(db.queryForList("SELECT uploader_id FROM resources WHERE id=?",targetId).stream().findFirst().orElse(null)),"uploader_id"):"message".equals(type)?number(db.queryForList("SELECT sender_id FROM messages WHERE id=?",targetId).getFirst(),"sender_id"):number(mapper.reply(targetId),"author_id");
             mapper.userStatus(userId,"mute".equals(action)?"muted":"banned");
         }
         if (!"reject".equals(action)) {
-            long offender="user".equals(type)?targetId:"post".equals(type)?number(mapper.post(targetId),"author_id"):"message".equals(type)?number(db.queryForList("SELECT sender_id FROM messages WHERE id=?",targetId).getFirst(),"sender_id"):number(mapper.reply(targetId),"author_id");
+            long offender="user".equals(type)?targetId:"post".equals(type)?number(mapper.post(targetId),"author_id"):"resource".equals(type)?number(require(db.queryForList("SELECT uploader_id FROM resources WHERE id=?",targetId).stream().findFirst().orElse(null)),"uploader_id"):"message".equals(type)?number(db.queryForList("SELECT sender_id FROM messages WHERE id=?",targetId).getFirst(),"sender_id"):number(mapper.reply(targetId),"author_id");
             changeReputation(offender,id(auth),"ban".equals(action)?-20:-10,"举报处理 #"+reportId);
         }
         String result = switch (action) {

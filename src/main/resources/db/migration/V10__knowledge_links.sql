@@ -1,0 +1,22 @@
+-- Wiki 的标签/讨论关联与知识实体参照完整性。
+ALTER TABLE wiki_pages ADD COLUMN tags VARCHAR(500) NOT NULL DEFAULT '', ADD COLUMN post_id BIGINT NULL;
+ALTER TABLE wiki_revisions ADD COLUMN tags VARCHAR(500) NOT NULL DEFAULT '', ADD COLUMN post_id BIGINT NULL;
+ALTER TABLE resources ADD FOREIGN KEY(uploader_id) REFERENCES users(id);
+ALTER TABLE resource_files ADD FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE;
+ALTER TABLE resource_uploads ADD FOREIGN KEY(user_id) REFERENCES users(id), ADD FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE SET NULL;
+ALTER TABLE resource_downloads ADD FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE resource_favorites ADD FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE resource_votes ADD FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE resource_comments ADD FOREIGN KEY(resource_id) REFERENCES resources(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE mistakes ADD FOREIGN KEY(user_id) REFERENCES users(id), ADD FOREIGN KEY(group_id) REFERENCES study_groups(id) ON DELETE SET NULL, ADD FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE SET NULL;
+ALTER TABLE mistake_reviews ADD FOREIGN KEY(mistake_id) REFERENCES mistakes(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE notes ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE note_revisions ADD FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE collections ADD FOREIGN KEY(owner_id) REFERENCES users(id);
+ALTER TABLE collection_items ADD FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE;
+ALTER TABLE collection_follows ADD FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE collection_favorites ADD FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE, ADD FOREIGN KEY(user_id) REFERENCES users(id);
+ALTER TABLE columns ADD FOREIGN KEY(owner_id) REFERENCES users(id);
+ALTER TABLE column_episodes ADD FOREIGN KEY(column_id) REFERENCES columns(id) ON DELETE CASCADE, ADD FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE SET NULL;
+ALTER TABLE wiki_pages ADD FOREIGN KEY(board_id) REFERENCES boards(id), ADD FOREIGN KEY(updated_by) REFERENCES users(id), ADD FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE SET NULL;
+ALTER TABLE wiki_revisions ADD FOREIGN KEY(page_id) REFERENCES wiki_pages(id) ON DELETE CASCADE, ADD FOREIGN KEY(editor_id) REFERENCES users(id), ADD FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE SET NULL;

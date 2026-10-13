@@ -42,7 +42,7 @@ async function saveRole() {
   await change('/admin/users/'+form.id+'/role','PATCH',{role:form.role,boardId:form.role==='moderator'?form.boardId:null})
   roleFormOpen.value=false
 }
-const sections=[['dashboard','概览'],['reports','举报处理'],['posts','内容管理'],['users','用户管理'],['boards','板块与标签'],['points','操作记录'],['announcements','系统公告'],['appeals','申诉管理'],['reputation','信誉分'],['checkin','打卡规则'],['focus','专注数据'],['study-rooms','自习室治理']]
+const sections=[['resources','资料审核'],['wiki','Wiki 管理'],['collections','合集推荐'],['dashboard','概览'],['reports','举报处理'],['posts','内容管理'],['users','用户管理'],['boards','板块与标签'],['points','操作记录'],['announcements','系统公告'],['appeals','申诉管理'],['reputation','信誉分'],['checkin','打卡规则'],['focus','专注数据'],['study-rooms','自习室治理']]
 async function load() {
   if (!session.user || !['admin','moderator'].includes(session.user.role)) return
   const admin=session.user.role==='admin', current=section.value
@@ -163,7 +163,7 @@ async function confirmRemoveAnnouncement() {
   finally { announcementDeleting.value=false; announcementToRemove.value=null }
 }
 </script>
-<template><div class="admin-page" v-if="session.user && ['admin','moderator'].includes(session.user.role)"><div class="page-heading"><span>社区治理</span><h1>管理后台</h1><p>保持讨论有序，让每一份认真回答被看见。</p></div><div class="admin-tabs"><RouterLink v-for="item in sections.filter(item=>session.user?.role==='admin' || !['users','boards','points','announcements','appeals','reputation','checkin','focus','study-rooms'].includes(item[0]))" :key="item[0]" :to="item[0]==='dashboard'?'/admin':'/admin/'+item[0]" :class="{active:section===item[0]}">{{ item[1] }}</RouterLink></div><p v-if="error" class="error">{{ error }}</p>
+<template><div class="admin-page" v-if="session.user && ['admin','moderator'].includes(session.user.role)"><div class="page-heading"><span>社区治理</span><h1>管理后台</h1><p>保持讨论有序，让每一份认真回答被看见。</p></div><div class="admin-tabs"><RouterLink v-for="item in sections.filter(item=>session.user?.role==='admin' || !['resources','collections','users','boards','points','announcements','appeals','reputation','checkin','focus','study-rooms'].includes(item[0]))" :key="item[0]" :to="item[0]==='dashboard'?'/admin':'/admin/'+item[0]" :class="{active:section===item[0]}">{{ item[1] }}</RouterLink></div><p v-if="error" class="error">{{ error }}</p>
   <form v-if="searchHint" class="admin-search" @submit.prevent="applySearch"><input v-model="searchInput" maxlength="60" type="search" :placeholder="searchHint" :aria-label="searchHint"/><button class="button primary" type="submit" :disabled="loading">{{ loading?'搜索中…':'搜索' }}</button><button v-if="keyword" class="button" type="button" @click="searchInput=''; applySearch()">清除</button></form>
   <p v-if="keyword" class="admin-search-hint">正在搜索「{{ keyword }}」</p>
   <div v-if="section==='dashboard'" class="stats-grid"><div v-for="item in [['用户',dashboard.users],['帖子',dashboard.posts],['回复',dashboard.replies],['今日新帖',dashboard.today],['待处理举报',dashboard.pending]]" :key="item[0]"><strong>{{ item[1] ?? '—' }}</strong><span>{{ item[0] }}</span></div></div>
