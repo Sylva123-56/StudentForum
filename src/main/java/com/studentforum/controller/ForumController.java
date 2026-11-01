@@ -2,6 +2,8 @@ package com.studentforum.controller;
 
 import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.ForumService;
+import com.studentforum.service.AccountService;
+import com.studentforum.model.SignedInAccount;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,7 +18,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -27,13 +28,13 @@ import org.springframework.web.server.ResponseStatusException;
 public class ForumController {
     private final ForumMapper mapper;
     private final ForumService service;
-    private final PasswordEncoder encoder;
+    private final AccountService accounts;
     private final HttpSessionSecurityContextRepository contexts;
 
-    public ForumController(ForumMapper mapper, ForumService service, PasswordEncoder encoder, HttpSessionSecurityContextRepository contexts) {
+    public ForumController(ForumMapper mapper, ForumService service, AccountService accounts, HttpSessionSecurityContextRepository contexts) {
         this.mapper = mapper;
         this.service = service;
-        this.encoder = encoder;
+        this.accounts = accounts;
         this.contexts = contexts;
     }
 
@@ -53,35 +54,17 @@ public class ForumController {
     }
 
     @PostMapping("/auth/register")
-    @Transactional
     public Map<String, Object> register(@RequestBody Map<String, Object> input, HttpServletRequest request, HttpServletResponse response) {
-        String email = String.valueOf(input.getOrDefault("email", "")).trim().toLowerCase(), username = String.valueOf(input.getOrDefault("username", "")).trim(), password = String.valueOf(input.getOrDefault("password", ""));
-        if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$") || username.length() < 2 || username.length() > 40 || password.length() < 8 || password.length() > 72)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请填写有效的邮箱、昵称和至少 8 位密码");
-        if (mapper.userExists(email, username) > 0)
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "邮箱或昵称已被使用");
-        Map<String, Object> user = new HashMap<>();
-        user.put("email", email);
-        user.put("username", username);
-        user.put("hash", encoder.encode(password));
-        mapper.insertUser(user);
-        long id = ((Number) user.get("id")).longValue();
-        service.reward(id, "register", 5, "user", id, 0);
-        signIn(id, "student", request, response);
-        return mapper.user(id);
+        SignedInAccount account = accounts.register(input);
+        signIn(account.id(), account.role(), request, response);
+        return account.profile();
     }
 
     @PostMapping("/auth/login")
-    @Transactional
     public Map<String, Object> login(@RequestBody Map<String, String> input, HttpServletRequest request, HttpServletResponse response) {
-        Map<String, Object> found = mapper.credentials(input.getOrDefault("email", "").trim().toLowerCase());
-        if (found == null || !encoder.matches(input.getOrDefault("password", ""), String.valueOf(found.get("password_hash"))))
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "邮箱或密码错误");
-        long id = service.number(found, "id");
-        mapper.login(id);
-        service.reward(id, "login", 1, "user", id, 1);
-        signIn(id, String.valueOf(found.get("role")), request, response);
-        return mapper.user(id);
+        SignedInAccount account = accounts.login(input);
+        signIn(account.id(), account.role(), request, response);
+        return account.profile();
     }
 
     @PostMapping("/auth/logout")
@@ -97,22 +80,12 @@ public class ForumController {
 
     @PutMapping("/me/profile")
     public void profile(Authentication auth, @RequestBody Map<String, Object> input) {
-        mapper.profile(service.id(auth), field(input, "school", 100), field(input, "grade", 40), field(input, "major", 100), field(input, "subjectPreference", 100), Boolean.TRUE.equals(input.get("publicSchool")), Boolean.TRUE.equals(input.get("publicGrade")));
+        accounts.profile(auth, input);
     }
 
     @PutMapping("/me/password")
     public void password(Authentication auth, @RequestBody Map<String, String> input) {
-        long id = service.id(auth);
-        String next = input.getOrDefault("newPassword", "");
-        if (!encoder.matches(input.getOrDefault("oldPassword", ""), mapper.hash(id)) || next.length() < 8 || next.length() > 72)
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "原密码错误或新密码长度无效");
-        mapper.password(id, encoder.encode(next));
-    }
-
-    private String field(Map<String, Object> input, String name, int max) {
-        String value = String.valueOf(input.getOrDefault(name, ""));
-        if (value.length() > max) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "资料内容过长");
-        return value.trim();
+        accounts.password(auth, input);
     }
 
     @GetMapping("/boards")

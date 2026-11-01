@@ -1,6 +1,7 @@
 package com.studentforum;
 
 import com.studentforum.controller.V2Controller;
+import com.studentforum.service.SocialService;
 import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.ForumService;
 
@@ -24,7 +25,7 @@ class V2ControllerTest {
 
     @BeforeEach void setup() {
         db = mock(JdbcTemplate.class);
-        controller = new V2Controller(db, new ForumService(mock(ForumMapper.class), db), mock(ForumMapper.class));
+        controller = new V2Controller(new SocialService(db, new ForumService(mock(ForumMapper.class), db), mock(ForumMapper.class)));
         auth = new UsernamePasswordAuthenticationToken("7", null, List.of());
     }
 

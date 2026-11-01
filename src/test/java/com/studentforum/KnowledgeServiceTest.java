@@ -2,6 +2,7 @@ package com.studentforum;
 
 import com.studentforum.controller.ResourceController;
 import com.studentforum.controller.WikiController;
+import com.studentforum.service.WikiService;
 import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.ForumService;
 import com.studentforum.service.KnowledgeService;
@@ -34,5 +35,5 @@ class KnowledgeServiceTest {
     @Test void pageSentinelIsNotReturned(){List<Map<String,Object>> rows=new ArrayList<>();for(int i=0;i<21;i++)rows.add(Map.of("id",i));var p=k.page(rows);assertEquals(20,((List<?>)p.get("items")).size());assertEquals(true,p.get("hasNext"));}
     @Test void binaryDisguisedAsTextIsRejected(){assertThrows(ResponseStatusException.class,()->ResourceController.validateFile("txt",new byte[]{0,1,2}));assertThrows(ResponseStatusException.class,()->ResourceController.validateFile("pdf","not a pdf".getBytes()));assertThrows(ResponseStatusException.class,()->ResourceController.validateFile("docx",new byte[]{'P','K',3,4}));}
     @Test void acceptsUtf8TextAndPdfMagic(){assertDoesNotThrow(()->ResourceController.validateFile("txt","学习资料".getBytes(java.nio.charset.StandardCharsets.UTF_8)));assertDoesNotThrow(()->ResourceController.validateFile("pdf","%PDF-1.4\n".getBytes()));}
-    @Test void wikiConcurrentEditRequiresCurrentRevision(){row("FROM wiki_pages",Map.of("id",5L,"board_id",1L));row("FROM wiki_revisions",Map.of("id",9L));when(mapper.user(7L)).thenReturn(Map.of("role","moderator","moderator_board_id",1L,"status","active"));var c=new WikiController(k);assertEquals(409,assertThrows(ResponseStatusException.class,()->c.edit(auth,5L,Map.of("baseRevisionId",8L))).getStatusCode().value());verify(db,never()).update(anyString(),any(Object[].class));}
+    @Test void wikiConcurrentEditRequiresCurrentRevision(){row("FROM wiki_pages",Map.of("id",5L,"board_id",1L));row("FROM wiki_revisions",Map.of("id",9L));when(mapper.user(7L)).thenReturn(Map.of("role","moderator","moderator_board_id",1L,"status","active"));var c=new WikiController(new WikiService(k));assertEquals(409,assertThrows(ResponseStatusException.class,()->c.edit(auth,5L,Map.of("baseRevisionId",8L))).getStatusCode().value());verify(db,never()).update(anyString(),any(Object[].class));}
 }

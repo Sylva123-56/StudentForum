@@ -1,6 +1,7 @@
 package com.studentforum;
 
 import com.studentforum.controller.AdminController;
+import com.studentforum.service.AdminService;
 import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.ForumService;
 
@@ -23,7 +24,7 @@ class AdminControllerTest {
 
     @BeforeEach void setup() {
         mapper = mock(ForumMapper.class);
-        controller = new AdminController(mapper, new ForumService(mapper, null));
+        controller = new AdminController(new AdminService(mapper, new ForumService(mapper, null)));
         admin = new UsernamePasswordAuthenticationToken("1", null, List.of());
         when(mapper.user(1)).thenReturn(Map.of("id", 1L, "role", "admin", "status", "active"));
     }

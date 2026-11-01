@@ -1,9 +1,13 @@
 package com.studentforum;
 
 import com.studentforum.controller.CheckinController;
+import com.studentforum.service.CheckinService;
 import com.studentforum.controller.FocusController;
+import com.studentforum.service.FocusService;
 import com.studentforum.controller.StudyPlanController;
+import com.studentforum.service.StudyPlanService;
 import com.studentforum.controller.StudyRoomController;
+import com.studentforum.service.StudyRoomService;
 import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.ForumService;
 import com.studentforum.service.StudyToolService;
@@ -47,10 +51,10 @@ class StudyToolsTest {
         mapper = mock(ForumMapper.class);
         service = new ForumService(mapper, db);
         tools = new StudyToolService(db, service, mapper);
-        checkin = new CheckinController(db, service, tools);
-        focus = new FocusController(db, service, tools);
-        rooms = new StudyRoomController(db, service, tools);
-        plans = new StudyPlanController(db, service, tools);
+        checkin = new CheckinController(new CheckinService(db, service, tools));
+        focus = new FocusController(new FocusService(db, service, tools));
+        rooms = new StudyRoomController(new StudyRoomService(db, service, tools));
+        plans = new StudyPlanController(new StudyPlanService(db, service, tools));
         auth = new UsernamePasswordAuthenticationToken(String.valueOf(ME), null, List.of());
 
         // 默认查询返回空集：只有测试显式桩过的 SQL 才有数据，避免"碰巧通过"

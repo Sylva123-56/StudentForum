@@ -1,6 +1,10 @@
 package com.studentforum.service;
 
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
@@ -10,8 +14,8 @@ import org.springframework.web.server.ResponseStatusException;
 /** Shared validation and visibility rules; public lists and detail endpoints use the same policy. */
 @Service
 public class KnowledgeService {
-    public final JdbcTemplate db;
-    public final ForumService forum;
+    final JdbcTemplate db;
+    final ForumService forum;
     public KnowledgeService(JdbcTemplate db, ForumService forum) { this.db=db; this.forum=forum; }
     public long user(Authentication auth) { return auth==null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal()) ? 0 : forum.id(auth); }
     public Map<String,Object> row(String sql,Object... args) { return db.queryForList(sql,args).stream().findFirst().orElse(null); }
