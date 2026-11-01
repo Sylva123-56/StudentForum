@@ -3,6 +3,7 @@ package com.studentforum.controller;
 import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.ForumService;
 import com.studentforum.service.AccountService;
+import com.studentforum.service.PostEditService;
 import com.studentforum.model.SignedInAccount;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,7 +20,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -29,12 +29,14 @@ public class ForumController {
     private final ForumMapper mapper;
     private final ForumService service;
     private final AccountService accounts;
+    private final PostEditService postEdits;
     private final HttpSessionSecurityContextRepository contexts;
 
-    public ForumController(ForumMapper mapper, ForumService service, AccountService accounts, HttpSessionSecurityContextRepository contexts) {
+    public ForumController(ForumMapper mapper, ForumService service, AccountService accounts, PostEditService postEdits, HttpSessionSecurityContextRepository contexts) {
         this.mapper = mapper;
         this.service = service;
         this.accounts = accounts;
+        this.postEdits = postEdits;
         this.contexts = contexts;
     }
 
@@ -140,24 +142,13 @@ public class ForumController {
     }
 
     @PatchMapping("/posts/{id}")
-    @Transactional
     public void edit(Authentication auth, @PathVariable long id, @RequestBody Map<String, String> input) {
-        Map<String, Object> post = service.require(mapper.post(id));
-        if (service.number(post, "author_id") != service.id(auth) || !"published".equals(post.get("status")))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        service.text(input.get("title"), 5, 160);
-        service.text(input.get("content"), 10, 10000);
-        mapper.editPost(id, input.get("title").trim(), input.get("content").trim());
-        service.revision(auth, id, input.get("title").trim(), input.get("content").trim());
+        postEdits.edit(auth, id, input);
     }
 
     @DeleteMapping("/posts/{id}")
-    @Transactional
     public void delete(Authentication auth, @PathVariable long id) {
-        Map<String, Object> post = service.require(mapper.post(id));
-        if (service.number(post, "author_id") != service.id(auth))
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        service.hardDeletePost(id);
+        postEdits.delete(auth, id);
     }
 
     @GetMapping("/posts/{id}/replies")

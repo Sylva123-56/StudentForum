@@ -1,5 +1,7 @@
 package com.studentforum.service;
 
+import com.studentforum.model.StudyPlanPeriod;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
@@ -107,7 +109,7 @@ public class StudyPlanService {
         String goal = tools.optionalText(input, "goal", 200);
         LocalDate start = tools.date(input, "startDate", LocalDate.now());
         LocalDate end = input.get("endDate") == null ? null : tools.date(input, "endDate", null);
-        check(end == null || !end.isBefore(start), "结束日期不能早于开始日期");
+        check(new StudyPlanPeriod(start, end).isValid(), "结束日期不能早于开始日期");
         Long groupId = input.get("groupId") == null ? null : tools.number(input, "groupId", 0);
         if (groupId != null && groupId > 0) check(tools.row("SELECT 1 FROM study_group_members WHERE group_id=? AND user_id=?", groupId, user) != null, "需要先加入该学习小组");
         else groupId = null;
@@ -175,7 +177,7 @@ public class StudyPlanService {
         String goal = input.containsKey("goal") ? tools.optionalText(input, "goal", 200) : (String) plan.get("goal");
         LocalDate start = input.containsKey("startDate") ? tools.date(input, "startDate", StudyToolService.toDate(plan.get("start_date"))) : StudyToolService.toDate(plan.get("start_date"));
         LocalDate end = input.containsKey("endDate") ? (input.get("endDate") == null ? null : tools.date(input, "endDate", null)) : StudyToolService.toDate(plan.get("end_date"));
-        check(end == null || start == null || !end.isBefore(start), "结束日期不能早于开始日期");
+        check(new StudyPlanPeriod(start, end).isValid(), "结束日期不能早于开始日期");
         String status = input.containsKey("status") ? String.valueOf(input.get("status")) : String.valueOf(plan.get("status"));
         check(STATUSES.contains(status), "计划状态无效");
         Long groupId = plan.get("group_id") == null ? null : tools.rowNumber(plan, "group_id");

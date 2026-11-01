@@ -31,13 +31,13 @@ Java 入口是 `src/main/java/com/studentforum/ForumApplication.java`，从这�
 | `controller` | 声明 HTTP 路径、参数与响应；将请求交给业务类 | `NoteController`、`AdminController` |
 | `service` | 校验输入、执行权限与业务流程；需要原子性的方法标注 `@Transactional` | `NoteService`、`AccountService` |
 | `repository` / `mapper` | 保存查询和数据库读写；前者使用现有 `JdbcTemplate`，后者保留 MyBatis | `NoteRepository`、`ForumMapper` |
-| `model` | 表达业务概念和规则，而不负责 HTTP 参数绑定 | `ModerationScope`、`SignedInAccount` |
+| `model` | 表达业务概念和规则，而不负责 HTTP 参数绑定 | `ModerationScope`、`Post`、`StudyPlanPeriod`、`SignedInAccount` |
 | `dto` | 表达接口输入或输出，字段应与现有 JSON 契约一致 | `AdminPostStatusRequest` |
 | `config` / `schedule` / `exception` | 安全与序列化配置、定时发布、统一错误响应 | `SecurityConfig`、`DraftPublisher`、`ApiErrors` |
 
 **跟一次请求：** `GET /api/notes` 先到 `NoteController.list` 绑定查询参数，再由 `NoteService.list` 检查访问条件与分页，由 `NoteRepository.search` 执行带参数的 SQL，最后按原有 `items` / `hasNext` 结构返回。写操作可以从 `NoteService.create` 继续追踪：同一事务内创建笔记与修订记录。
 
-**对象与 DTO 不同：** `ModerationScope` 把管理员与版主能看到哪些板块的规则封装在对象里；`AdminPostStatusRequest` 只负责接收 `{ "status": "hidden" }`。不必为每个数据表建立类，也不要为只有一个实现的 Service 强行添加接口。新增功能可先找到同领域 Controller，再沿 Service → Repository/Mapper 查找原有约束与 SQL。
+**对象与 DTO 不同：** `ModerationScope` 封装版主可见板块，`Post` 封装作者编辑与采纳规则，`StudyPlanPeriod` 校验计划日期；`AdminPostStatusRequest` 只负责接收 `{ "status": "hidden" }`。不必为每个数据表建立类，也不要为只有一个实现的 Service 强行添加接口。新增功能可先找到同领域 Controller，再沿 Service → Repository/Mapper 查找原有约束与 SQL。
 
 **渐进迁移边界：** 现有接口、字段名、权限与数据库表不变。笔记与小组后台管理模块的 SQL 已集中到 Repository，小组检索 SQL 也已下沉；其他历史模块仍有部分 SQL 与 `Map<String, Object>` 留在 Service，后续应按领域继续收拢，而不是一次性改写全部响应结构。单元测试运行 `mvn test`；需按文末说明配置独立测试数据库，才能运行可选集成测试。
 

@@ -1,6 +1,7 @@
 package com.studentforum.service;
 
 import com.studentforum.mapper.ForumMapper;
+import com.studentforum.model.Post;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -168,7 +169,12 @@ public class ForumService {
     }
     @Transactional public void accept(Authentication auth,long postId,long replyId) {
         Map<String,Object> post = require(mapper.post(postId)), reply = require(mapper.reply(replyId));
-        if (!"question".equals(post.get("type")) || number(post,"author_id") != id(auth) || !"published".equals(post.get("status")) || number(reply,"post_id") != postId || !"published".equals(reply.get("status"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"只能采纳自己问答帖中的有效回复");
+        Post question = new Post(number(post, "author_id"),
+                String.valueOf(post.get("type")), String.valueOf(post.get("status")));
+        if (!question.acceptsAnswerFrom(id(auth))
+                || number(reply, "post_id") != postId
+                || !"published".equals(reply.get("status")))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能采纳自己问答帖中的有效回复");
         if (number(reply,"author_id")==id(auth)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"不能采纳自己的回答");
         if (mapper.acceptPost(postId,replyId) == 0) throw new ResponseStatusException(HttpStatus.CONFLICT,"此问题已有最佳答案");
         mapper.acceptReply(replyId);
