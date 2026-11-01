@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
+import com.studentforum.service.StudyToolService;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -19,7 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/api/admin/study-tools")
-class AdminStudyController {
+public class AdminStudyController {
     /** 可配置的积分/规则项：键 → [最小值, 最大值]，越界直接 400 而不是静默纠正。 */
     private static final Map<String, int[]> NUMBERS = Map.of(
             "checkin_points", new int[]{0, 100},
@@ -35,7 +38,7 @@ class AdminStudyController {
     private final ForumService service;
     private final StudyToolService tools;
 
-    AdminStudyController(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public AdminStudyController(JdbcTemplate db, ForumService service, StudyToolService tools) {
         this.db = db;
         this.service = service;
         this.tools = tools;
@@ -57,7 +60,7 @@ class AdminStudyController {
 
     /** 打卡 section：规则配置 + 打卡总览 + 最近打卡明细，一次请求渲染整个后台页。 */
     @GetMapping("/checkin")
-    Map<String, Object> checkin(Authentication auth) {
+    public Map<String, Object> checkin(Authentication auth) {
         Map<String, Object> result = new LinkedHashMap<>();
         Map<String, Object> settings = tools.settings();
         settings.put("allow_makeup", tools.allowMakeup());
@@ -76,7 +79,7 @@ class AdminStudyController {
     /** 保存打卡规则：只接受白名单里的键，越界拒绝，避免管理员把积分系统配成负数。 */
     @PatchMapping("/checkin/settings")
     @Transactional
-    Map<String, Object> saveSettings(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> saveSettings(Authentication auth, @RequestBody Map<String, Object> input) {
         long actor = id(auth);
         List<String> changed = new ArrayList<>();
         List<Object> values = new ArrayList<>();
@@ -110,7 +113,7 @@ class AdminStudyController {
     // ---------- 专注：数据概览 ----------
 
     @GetMapping("/focus")
-    Map<String, Object> focus(Authentication auth, @RequestParam(defaultValue = "week") String range) {
+    public Map<String, Object> focus(Authentication auth, @RequestParam(defaultValue = "week") String range) {
         LocalDate start = switch (range == null ? "week" : range) {
             case "month" -> LocalDate.now().minusDays(29);
             case "year" -> LocalDate.now().minusDays(364);
@@ -132,7 +135,7 @@ class AdminStudyController {
     /** 后台清理明显的异常专注记录（误计时），并写审计日志。 */
     @DeleteMapping("/focus/{sessionId}")
     @Transactional
-    Map<String, Object> deleteSession(Authentication auth, @PathVariable long sessionId) {
+    public Map<String, Object> deleteSession(Authentication auth, @PathVariable long sessionId) {
         long actor = id(auth);
         Map<String, Object> session = tools.requiredRow("SELECT * FROM focus_sessions WHERE id=?", "专注记录不存在", sessionId);
         db.update("DELETE FROM focus_sessions WHERE id=?", sessionId);
@@ -145,7 +148,7 @@ class AdminStudyController {
     // ---------- 自习室：治理 ----------
 
     @GetMapping("/study-rooms")
-    Map<String, Object> rooms(Authentication auth,
+    public Map<String, Object> rooms(Authentication auth,
                               @RequestParam(required = false) String status,
                               @RequestParam(required = false) String keyword) {
         List<Object> args = new ArrayList<>();
@@ -167,7 +170,7 @@ class AdminStudyController {
     /** 关闭/恢复一个自习室：违规房间直接关掉，但保留成员数据以便复核。 */
     @PatchMapping("/study-rooms/{roomId}")
     @Transactional
-    Map<String, Object> updateRoom(Authentication auth, @PathVariable long roomId, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> updateRoom(Authentication auth, @PathVariable long roomId, @RequestBody Map<String, Object> input) {
         long actor = id(auth);
         Map<String, Object> room = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
         String status = input.containsKey("status") ? String.valueOf(input.get("status")) : String.valueOf(room.get("status"));
@@ -184,7 +187,7 @@ class AdminStudyController {
     /** 删除自习室：级联删掉成员与消息，属于不可逆操作，交给超管。 */
     @DeleteMapping("/study-rooms/{roomId}")
     @Transactional
-    Map<String, Object> deleteRoom(Authentication auth, @PathVariable long roomId) {
+    public Map<String, Object> deleteRoom(Authentication auth, @PathVariable long roomId) {
         long actor = id(auth);
         Map<String, Object> room = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
         db.update("DELETE FROM study_rooms WHERE id=?", roomId);

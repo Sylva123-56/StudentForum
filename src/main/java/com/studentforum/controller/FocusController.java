@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
+import com.studentforum.service.StudyToolService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,7 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/api/focus")
-class FocusController {
+public class FocusController {
     /** 一次专注最长 12 小时：再长也不像是真实计时，多半是前端没停表。 */
     private static final int MAX_MINUTES = 720;
 
@@ -30,7 +33,7 @@ class FocusController {
     private final ForumService service;
     private final StudyToolService tools;
 
-    FocusController(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public FocusController(JdbcTemplate db, ForumService service, StudyToolService tools) {
         this.db = db;
         this.service = service;
         this.tools = tools;
@@ -57,7 +60,7 @@ class FocusController {
      */
     @PostMapping("/sessions")
     @Transactional
-    Map<String, Object> createSession(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> createSession(Authentication auth, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         int duration = (int) tools.number(input, "durationMinutes", 0);
@@ -129,7 +132,7 @@ class FocusController {
 
     /** 专注历史，可限定时间段，供"专注记录"列表页使用。 */
     @GetMapping("/sessions")
-    Map<String, Object> sessions(Authentication auth,
+    public Map<String, Object> sessions(Authentication auth,
                                 @RequestParam(required = false) String range,
                                 @RequestParam(defaultValue = "1") int page) {
         long user = id(auth);
@@ -148,7 +151,7 @@ class FocusController {
     // ---------- 统计 ----------
 
     @GetMapping("/stats")
-    Map<String, Object> stats(Authentication auth, @RequestParam(defaultValue = "week") String range) {
+    public Map<String, Object> stats(Authentication auth, @RequestParam(defaultValue = "week") String range) {
         long user = id(auth);
         LocalDate today = LocalDate.now();
         LocalDate start = rangeStart(range);
@@ -218,7 +221,7 @@ class FocusController {
 
     /** 专注排行（周/月/总榜），只统计公开可见的数据，榜单本身不需要登录。 */
     @GetMapping("/leaderboard")
-    Map<String, Object> leaderboard(@RequestParam(defaultValue = "week") String range,
+    public Map<String, Object> leaderboard(@RequestParam(defaultValue = "week") String range,
                                     @RequestParam(defaultValue = "1") int page,
                                     Authentication auth) {
         LocalDate start = switch (range == null ? "week" : range) {
@@ -249,7 +252,7 @@ class FocusController {
 
     /** 我的自习室记录：累计专注、参与过的自习室、今日/本周时长。 */
     @GetMapping("/me/rooms")
-    Map<String, Object> myRooms(Authentication auth) {
+    public Map<String, Object> myRooms(Authentication auth) {
         long user = id(auth);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("participated", db.queryForList("SELECT r.id,r.name,r.status,r.owner_id,r.focus_minutes,r.created_at,m.total_minutes,m.joined_at FROM study_room_members m JOIN study_rooms r ON r.id=m.room_id WHERE m.user_id=? ORDER BY r.created_at DESC LIMIT 20", user));

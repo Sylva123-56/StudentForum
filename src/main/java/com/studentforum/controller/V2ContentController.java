@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.mapper.ForumMapper;
+import com.studentforum.service.ForumService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,7 +22,7 @@ public class V2ContentController {
     private final ForumService service;
     private final ForumMapper mapper;
 
-    V2ContentController(JdbcTemplate db, ForumService service, ForumMapper mapper) {
+    public V2ContentController(JdbcTemplate db, ForumService service, ForumMapper mapper) {
         this.db = db;
         this.service = service;
         this.mapper = mapper;
@@ -71,7 +74,7 @@ public class V2ContentController {
 
     @PostMapping("/posts/enhanced")
     @Transactional
-    Map<String, Object> publish(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> publish(Authentication auth, @RequestBody Map<String, Object> input) {
         Map<String, Object> post = service.publish(auth, input);
         long postId = service.number(post, "id");
         if (input.get("vote") instanceof Map<?, ?> vote) {
@@ -88,7 +91,7 @@ public class V2ContentController {
 
     @PostMapping("/posts/{postId}/vote")
     @Transactional
-    void createVote(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
+    public void createVote(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         Map<String, Object> post = service.require(mapper.post(postId));
         check(service.number(post, "author_id") == id(auth) && "published".equals(post.get("status")), "只能为自己的有效帖子发起投票");
@@ -116,7 +119,7 @@ public class V2ContentController {
     }
 
     @GetMapping("/posts/{postId}/vote")
-    Map<String, Object> vote(Authentication auth, @PathVariable long postId) {
+    public Map<String, Object> vote(Authentication auth, @PathVariable long postId) {
         check("published".equals(service.require(mapper.post(postId)).get("status")), "帖子不可见");
         Map<String, Object> vote = new java.util.HashMap<>(required("SELECT * FROM votes WHERE post_id=?", postId));
         long me = auth == null || "anonymousUser".equals(auth.getPrincipal()) ? -1 : id(auth), voteId = service.number(vote, "id");
@@ -131,7 +134,7 @@ public class V2ContentController {
 
     @PostMapping("/posts/{postId}/vote/ballots")
     @Transactional
-    void ballot(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
+    public void ballot(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
         Map<String, Object> vote = required("SELECT * FROM votes WHERE post_id=? FOR UPDATE", postId);
         check("published".equals(service.require(mapper.post(postId)).get("status")), "帖子不可见");
         long voteId = service.number(vote, "id");
@@ -148,7 +151,7 @@ public class V2ContentController {
 
     @PostMapping("/posts/{postId}/bounty")
     @Transactional
-    void bounty(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
+    public void bounty(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         Map<String, Object> post = service.require(mapper.post(postId));
         long amount = number(input, "amount");
@@ -160,17 +163,17 @@ public class V2ContentController {
     }
 
     @GetMapping("/posts/{postId}/bounty")
-    Map<String, Object> bounty(@PathVariable long postId) {
+    public Map<String, Object> bounty(@PathVariable long postId) {
         return required("SELECT * FROM bounties WHERE post_id=?", postId);
     }
 
     @GetMapping("/me/drafts")
-    List<Map<String, Object>> drafts(Authentication auth) {
+    public List<Map<String, Object>> drafts(Authentication auth) {
         return db.queryForList("SELECT * FROM drafts WHERE user_id=? ORDER BY updated_at DESC LIMIT 100", id(auth));
     }
 
     @GetMapping("/drafts/{draftId}")
-    Map<String, Object> draft(Authentication auth, @PathVariable long draftId) {
+    public Map<String, Object> draft(Authentication auth, @PathVariable long draftId) {
         return required("SELECT * FROM drafts WHERE id=? AND user_id=?", draftId, id(auth));
     }
 
@@ -180,7 +183,7 @@ public class V2ContentController {
 
     @PostMapping("/drafts")
     @Transactional
-    Map<String, Object> draft(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> draft(Authentication auth, @RequestBody Map<String, Object> input) {
         long me = id(auth);
         org.springframework.jdbc.support.GeneratedKeyHolder key = new org.springframework.jdbc.support.GeneratedKeyHolder();
         db.update(connection -> {
@@ -194,7 +197,7 @@ public class V2ContentController {
     }
 
     @PatchMapping("/drafts/{draftId}")
-    void updateDraft(Authentication auth, @PathVariable long draftId, @RequestBody Map<String, Object> input) {
+    public void updateDraft(Authentication auth, @PathVariable long draftId, @RequestBody Map<String, Object> input) {
         required("SELECT id FROM drafts WHERE id=? AND user_id=?", draftId, id(auth));
         String type = text(input, "type", 20), title = text(input, "title", 160), content = text(input, "content", 10000);
         if (!title.isEmpty()) service.text(title, 1, 160);
@@ -215,24 +218,24 @@ public class V2ContentController {
     }
 
     @DeleteMapping("/drafts/{draftId}")
-    void deleteDraft(Authentication auth, @PathVariable long draftId) {
+    public void deleteDraft(Authentication auth, @PathVariable long draftId) {
         db.update("DELETE FROM drafts WHERE id=? AND user_id=?", draftId, id(auth));
     }
 
     @GetMapping("/posts/{postId}/revisions")
-    List<Map<String, Object>> revisions(@PathVariable long postId) {
+    public List<Map<String, Object>> revisions(@PathVariable long postId) {
         check("published".equals(service.require(mapper.post(postId)).get("status")), "帖子不可见");
         return db.queryForList("SELECT id,title,created_at FROM post_revisions WHERE post_id=? ORDER BY id DESC", postId);
     }
 
     @GetMapping("/posts/{postId}/revisions/{revisionId}")
-    Map<String, Object> revision(@PathVariable long postId, @PathVariable long revisionId) {
+    public Map<String, Object> revision(@PathVariable long postId, @PathVariable long revisionId) {
         check("published".equals(service.require(mapper.post(postId)).get("status")), "帖子不可见");
         return required("SELECT * FROM post_revisions WHERE post_id=? AND id=?", postId, revisionId);
     }
 
     @GetMapping("/replies/{replyId}/revisions")
-    List<Map<String, Object>> replyRevisions(@PathVariable long replyId) {
+    public List<Map<String, Object>> replyRevisions(@PathVariable long replyId) {
         Map<String, Object> reply = service.require(mapper.reply(replyId));
         check("published".equals(reply.get("status")) && "published".equals(service.require(mapper.post(service.number(reply, "post_id"))).get("status")), "回复不可见");
         return db.queryForList("SELECT * FROM reply_revisions WHERE reply_id=? ORDER BY id DESC", replyId);
@@ -240,7 +243,7 @@ public class V2ContentController {
 
     @PatchMapping("/replies/{replyId}")
     @Transactional
-    void editReply(Authentication auth, @PathVariable long replyId, @RequestBody Map<String, Object> input) {
+    public void editReply(Authentication auth, @PathVariable long replyId, @RequestBody Map<String, Object> input) {
         Map<String, Object> reply = service.require(mapper.reply(replyId));
         check(service.number(reply, "author_id") == id(auth) && "published".equals(reply.get("status")), "只能编辑自己的回复");
         String content = text(input, "content", 5000);
@@ -250,12 +253,12 @@ public class V2ContentController {
     }
 
     @GetMapping("/me/reputation")
-    Map<String, Object> reputation(Authentication auth) {
+    public Map<String, Object> reputation(Authentication auth) {
         return Map.of("score", service.current(auth).get("reputation"), "logs", db.queryForList("SELECT * FROM reputation_logs WHERE user_id=? ORDER BY id DESC LIMIT 100", id(auth)));
     }
 
     @GetMapping("/me/appeal-targets")
-    List<Map<String, Object>> appealTargets(Authentication auth) {
+    public List<Map<String, Object>> appealTargets(Authentication auth) {
         return db.queryForList("""
             SELECT candidates.target_type, candidates.target_id, candidates.label
             FROM (
@@ -289,7 +292,7 @@ public class V2ContentController {
 
     @PostMapping("/appeals")
     @Transactional
-    void appeal(Authentication auth, @RequestBody Map<String, Object> input) {
+    public void appeal(Authentication auth, @RequestBody Map<String, Object> input) {
         String type = text(input, "targetType", 20), reason = text(input, "reason", 2000);
         long target = number(input, "targetId");
         check(Set.of("post", "reply", "user", "report", "message").contains(type) && reason.length() >= 10, "申诉内容无效");
@@ -319,12 +322,12 @@ public class V2ContentController {
     }
 
     @GetMapping("/me/appeals")
-    List<Map<String, Object>> appeals(Authentication auth) {
+    public List<Map<String, Object>> appeals(Authentication auth) {
         return db.queryForList("SELECT * FROM appeals WHERE user_id=? ORDER BY id DESC LIMIT 100", id(auth));
     }
 
     @GetMapping("/admin/appeals")
-    Map<String, Object> adminAppeals(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
+    public Map<String, Object> adminAppeals(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
         service.admin(auth);
         String name = searchKeyword(keyword);
         String filter = name == null ? "" : " WHERE LOCATE(LOWER(?),LOWER(u.username))>0";
@@ -334,7 +337,7 @@ public class V2ContentController {
 
     @PatchMapping("/admin/appeals/{appealId}")
     @Transactional
-    void handleAppeal(Authentication auth, @PathVariable long appealId, @RequestBody Map<String, Object> input) {
+    public void handleAppeal(Authentication auth, @PathVariable long appealId, @RequestBody Map<String, Object> input) {
         service.admin(auth);
         String status = text(input, "status", 20), note = text(input, "note", 500);
         check(Set.of("resolved", "rejected").contains(status) && !note.isBlank(), "处理结果及备注不能为空");
@@ -349,7 +352,7 @@ public class V2ContentController {
     }
 
     @GetMapping("/admin/reputation")
-    Map<String, Object> adminReputation(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
+    public Map<String, Object> adminReputation(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
         service.admin(auth);
         String name = searchKeyword(keyword);
         String filter = name == null ? "" : " WHERE LOCATE(LOWER(?),LOWER(u.username))>0";
@@ -359,7 +362,7 @@ public class V2ContentController {
 
     @PatchMapping("/admin/reputation/{userId}")
     @Transactional
-    void adjustReputation(Authentication auth, @PathVariable long userId, @RequestBody Map<String, Object> input) {
+    public void adjustReputation(Authentication auth, @PathVariable long userId, @RequestBody Map<String, Object> input) {
         service.admin(auth);
         service.require(mapper.user(userId));
         long amount = number(input, "amount");

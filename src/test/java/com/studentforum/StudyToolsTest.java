@@ -1,5 +1,13 @@
 package com.studentforum;
 
+import com.studentforum.controller.CheckinController;
+import com.studentforum.controller.FocusController;
+import com.studentforum.controller.StudyPlanController;
+import com.studentforum.controller.StudyRoomController;
+import com.studentforum.mapper.ForumMapper;
+import com.studentforum.service.ForumService;
+import com.studentforum.service.StudyToolService;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;

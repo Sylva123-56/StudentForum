@@ -1,4 +1,4 @@
-package com.studentforum;
+package com.studentforum.config;
 
 import java.io.IOException;
 import java.sql.Timestamp;
@@ -22,12 +22,12 @@ import com.fasterxml.jackson.databind.ser.std.StdSerializer;
  * 这里只对这两个 JDBC 类型生效，既有的接口因此也一并变成稳定的日期字符串。
  */
 @Configuration
-class JacksonConfig {
+public class JacksonConfig {
 
     private static final DateTimeFormatter DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Bean
-    Jackson2ObjectMapperBuilderCustomizer jdbcDateCustomizer() {
+    public Jackson2ObjectMapperBuilderCustomizer jdbcDateCustomizer() {
         return builder -> {
             SimpleModule module = new SimpleModule("jdbc-time");
             module.addSerializer(java.sql.Date.class, new SqlDateSerializer());

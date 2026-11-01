@@ -1,4 +1,4 @@
-package com.studentforum;
+package com.studentforum.exception;
 
 import java.util.Map;
 
@@ -12,17 +12,17 @@ import org.springframework.web.server.ResponseStatusException;
 @RestControllerAdvice
 public class ApiErrors {
     @ExceptionHandler(ResponseStatusException.class)
-    org.springframework.http.ResponseEntity<Map<String, String>> expected(ResponseStatusException error) {
+    public org.springframework.http.ResponseEntity<Map<String, String>> expected(ResponseStatusException error) {
         return org.springframework.http.ResponseEntity.status(error.getStatusCode()).body(Map.of("message", error.getReason() == null ? error.getStatusCode().toString() : error.getReason()));
     }
 
     @ExceptionHandler(MaxUploadSizeExceededException.class)
-    org.springframework.http.ResponseEntity<Map<String, String>> tooLarge() {
+    public org.springframework.http.ResponseEntity<Map<String, String>> tooLarge() {
         return org.springframework.http.ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "文件太大，单个文件不能超过 25MB"));
     }
 
     @ExceptionHandler(DuplicateKeyException.class)
-    org.springframework.http.ResponseEntity<Map<String, String>> duplicate() {
+    public org.springframework.http.ResponseEntity<Map<String, String>> duplicate() {
         return org.springframework.http.ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "名称或邮箱已存在"));
     }
 }

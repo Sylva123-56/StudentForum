@@ -1,5 +1,9 @@
 package com.studentforum;
 
+import com.studentforum.controller.V2Controller;
+import com.studentforum.mapper.ForumMapper;
+import com.studentforum.service.ForumService;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;

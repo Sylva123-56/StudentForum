@@ -1,4 +1,6 @@
-package com.studentforum;
+package com.studentforum.config;
+
+import com.studentforum.mapper.ForumMapper;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
@@ -8,7 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 @Configuration
 public class DemoAccounts {
-    @Bean ApplicationRunner demoAccountSeeder(ForumMapper mapper,PasswordEncoder encoder,@Value("${forum.demo-password:}") String password) {
+    @Bean public ApplicationRunner demoAccountSeeder(ForumMapper mapper,PasswordEncoder encoder,@Value("${forum.demo-password:}") String password) {
         return args -> {
             if (password.isBlank()) return;
             if (password.length()<8) throw new IllegalArgumentException("DEMO_PASSWORD must be at least 8 characters");

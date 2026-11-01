@@ -1,5 +1,8 @@
 package com.studentforum;
 
+import com.studentforum.config.DemoAccounts;
+import com.studentforum.mapper.ForumMapper;
+
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 

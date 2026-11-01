@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
+import com.studentforum.service.StudyToolService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,14 +25,14 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/api/plans")
-class StudyPlanController {
+public class StudyPlanController {
     private static final Set<String> STATUSES = Set.of("active", "completed", "archived");
 
     private final JdbcTemplate db;
     private final ForumService service;
     private final StudyToolService tools;
 
-    StudyPlanController(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public StudyPlanController(JdbcTemplate db, ForumService service, StudyToolService tools) {
         this.db = db;
         this.service = service;
         this.tools = tools;
@@ -70,7 +73,7 @@ class StudyPlanController {
     // ---------- 计划 ----------
 
     @GetMapping
-    Map<String, Object> plans(Authentication auth,
+    public Map<String, Object> plans(Authentication auth,
                               @RequestParam(required = false) String status,
                               @RequestParam(required = false) String subject) {
         long user = id(auth);
@@ -102,7 +105,7 @@ class StudyPlanController {
 
     @PostMapping
     @Transactional
-    Map<String, Object> createPlan(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> createPlan(Authentication auth, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         String title = tools.text(input, "title", 2, 60, "计划标题需要 2 到 60 个字");
@@ -137,7 +140,7 @@ class StudyPlanController {
     }
 
     @GetMapping("/stats")
-    Map<String, Object> planStats(Authentication auth) {
+    public Map<String, Object> planStats(Authentication auth) {
         return stats(id(auth));
     }
 
@@ -166,13 +169,13 @@ class StudyPlanController {
     }
 
     @GetMapping("/{planId}")
-    Map<String, Object> plan(Authentication auth, @PathVariable long planId) {
+    public Map<String, Object> plan(Authentication auth, @PathVariable long planId) {
         return detail(planId, id(auth));
     }
 
     @PatchMapping("/{planId}")
     @Transactional
-    Map<String, Object> updatePlan(Authentication auth, @PathVariable long planId, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> updatePlan(Authentication auth, @PathVariable long planId, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> plan = plan(planId, user);
@@ -203,7 +206,7 @@ class StudyPlanController {
      */
     @PatchMapping("/{planId}/archive")
     @Transactional
-    Map<String, Object> archivePlan(Authentication auth, @PathVariable long planId, @RequestBody(required = false) Map<String, Object> input) {
+    public Map<String, Object> archivePlan(Authentication auth, @PathVariable long planId, @RequestBody(required = false) Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         plan(planId, user);
@@ -214,7 +217,7 @@ class StudyPlanController {
     }
 
     @DeleteMapping("/{planId}")
-    Map<String, Object> deletePlan(Authentication auth, @PathVariable long planId) {
+    public Map<String, Object> deletePlan(Authentication auth, @PathVariable long planId) {
         service.writable(auth);
         long user = id(auth);
         plan(planId, user);
@@ -226,7 +229,7 @@ class StudyPlanController {
 
     @PostMapping("/{planId}/tasks")
     @Transactional
-    Map<String, Object> addTask(Authentication auth, @PathVariable long planId, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> addTask(Authentication auth, @PathVariable long planId, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         plan(planId, user);
@@ -252,7 +255,7 @@ class StudyPlanController {
      */
     @PatchMapping("/{planId}/tasks/{taskId}")
     @Transactional
-    Map<String, Object> updateTask(Authentication auth, @PathVariable long planId, @PathVariable long taskId, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> updateTask(Authentication auth, @PathVariable long planId, @PathVariable long taskId, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> before = plan(planId, user);
@@ -324,7 +327,7 @@ class StudyPlanController {
 
     @DeleteMapping("/{planId}/tasks/{taskId}")
     @Transactional
-    Map<String, Object> deleteTask(Authentication auth, @PathVariable long planId, @PathVariable long taskId) {
+    public Map<String, Object> deleteTask(Authentication auth, @PathVariable long planId, @PathVariable long taskId) {
         service.writable(auth);
         long user = id(auth);
         plan(planId, user);
@@ -338,7 +341,7 @@ class StudyPlanController {
     // ---------- 计划模板 ----------
 
     @GetMapping("/templates")
-    Map<String, Object> templates(Authentication auth, @RequestParam(required = false) String subject) {
+    public Map<String, Object> templates(Authentication auth, @RequestParam(required = false) String subject) {
         long user = id(auth);
         String filter = subject == null || subject.isBlank() ? "" : " AND subject=?";
         List<Object> args = subject == null || subject.isBlank() ? List.of() : List.of(subject.trim());
@@ -360,7 +363,7 @@ class StudyPlanController {
     /** 把模板存成我的计划模板，之后可以反复套用。 */
     @PostMapping("/templates")
     @Transactional
-    Map<String, Object> createTemplate(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> createTemplate(Authentication auth, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         String title = tools.text(input, "title", 2, 60, "模板名称需要 2 到 60 个字");
@@ -379,7 +382,7 @@ class StudyPlanController {
     /** 把自己某个计划直接存成模板（用户最常用的入口）。 */
     @PostMapping("/{planId}/template")
     @Transactional
-    Map<String, Object> templateFromPlan(Authentication auth, @PathVariable long planId, @RequestBody(required = false) Map<String, Object> input) {
+    public Map<String, Object> templateFromPlan(Authentication auth, @PathVariable long planId, @RequestBody(required = false) Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> plan = plan(planId, user);
@@ -415,7 +418,7 @@ class StudyPlanController {
      */
     @PostMapping("/templates/{templateId}/apply")
     @Transactional
-    Map<String, Object> applyTemplateEndpoint(Authentication auth, @PathVariable long templateId, @RequestBody(required = false) Map<String, Object> input) {
+    public Map<String, Object> applyTemplateEndpoint(Authentication auth, @PathVariable long templateId, @RequestBody(required = false) Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> template = tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
@@ -440,7 +443,7 @@ class StudyPlanController {
     }
 
     @DeleteMapping("/templates/{templateId}")
-    Map<String, Object> deleteTemplate(Authentication auth, @PathVariable long templateId) {
+    public Map<String, Object> deleteTemplate(Authentication auth, @PathVariable long templateId) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> template = tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);

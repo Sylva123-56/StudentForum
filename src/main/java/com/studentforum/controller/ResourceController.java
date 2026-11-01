@@ -1,4 +1,6 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.KnowledgeService;
 
 import java.io.*;
 import java.nio.file.*;
@@ -15,12 +17,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api")
-class ResourceController {
+public class ResourceController {
     private final KnowledgeService k;
     private final Path directory;
-    ResourceController(KnowledgeService k,@Value("${forum.knowledge-files:knowledge-files}") String path,@Value("${forum.uploads}") String publicUploads) { this.k=k; directory=Path.of(path).toAbsolutePath().normalize(); if(directory.startsWith(Path.of(publicUploads).toAbsolutePath().normalize()))throw new IllegalArgumentException("Knowledge files must not be stored under public uploads"); }
+    public ResourceController(KnowledgeService k,@Value("${forum.knowledge-files:knowledge-files}") String path,@Value("${forum.uploads}") String publicUploads) { this.k=k; directory=Path.of(path).toAbsolutePath().normalize(); if(directory.startsWith(Path.of(publicUploads).toAbsolutePath().normalize()))throw new IllegalArgumentException("Knowledge files must not be stored under public uploads"); }
     @GetMapping("/resources")
-    Map<String,Object> list(Authentication auth,@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="") String subject,@RequestParam(defaultValue="") String grade,@RequestParam(defaultValue="") String textbook,@RequestParam(defaultValue="") String exam,@RequestParam(defaultValue="false") boolean mine,@RequestParam(defaultValue="false") boolean favorite,@RequestParam(defaultValue="1") int page) {
+    public Map<String,Object> list(Authentication auth,@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="") String subject,@RequestParam(defaultValue="") String grade,@RequestParam(defaultValue="") String textbook,@RequestParam(defaultValue="") String exam,@RequestParam(defaultValue="false") boolean mine,@RequestParam(defaultValue="false") boolean favorite,@RequestParam(defaultValue="1") int page) {
         k.check(!mine && !favorite || k.user(auth)>0,"请先登录");
         String sql="SELECT r.*,u.username,(SELECT COUNT(*) FROM resource_favorites f WHERE f.resource_id=r.id) AS favorite_count,(SELECT COUNT(*) FROM resource_votes v WHERE v.resource_id=r.id) AS like_count FROM resources r JOIN users u ON u.id=r.uploader_id WHERE "+(mine?"r.uploader_id=?":"r.status='published'");
         List<Object> args=new ArrayList<>(); if(mine)args.add(k.user(auth));
@@ -30,7 +32,7 @@ class ResourceController {
         sql+=" ORDER BY r.id DESC LIMIT 21 OFFSET ?";args.add(k.offset(page)); return k.page(k.db.queryForList(sql,args.toArray()));
     }
     @PostMapping("/resources/files") @Transactional
-    Map<String,Object> upload(Authentication auth,@RequestParam MultipartFile file) throws IOException {
+    public Map<String,Object> upload(Authentication auth,@RequestParam MultipartFile file) throws IOException {
         k.forum.writable(auth); k.check(!file.isEmpty() && file.getSize()<=25_000_000,"文件大小须为 1 字节至 25MB");
         String name=Objects.toString(file.getOriginalFilename(),"file").replace((char)92,'_').replaceAll("[\\/\r\n]","_"); k.check(name.length()<=255,"文件名过长");
         String ext=name.substring(name.lastIndexOf('.')+1).toLowerCase(Locale.ROOT);
@@ -44,7 +46,7 @@ class ResourceController {
         long id=k.insert("INSERT INTO resource_uploads(user_id,file_name,stored_name,mime_type,size_bytes) VALUES(?,?,?,?,?)",k.user(auth),name,stored,mime,bytes.length);
         return Map.of("id",id,"name",name,"sizeBytes",bytes.length);
     }
-    static void validateFile(String ext,byte[] b) throws IOException {
+    public static void validateFile(String ext,byte[] b) throws IOException {
         boolean zip=b.length>=4 && b[0]=='P' && b[1]=='K' && b[2]==3 && b[3]==4;
         boolean valid=switch(ext){
             case "pdf" -> b.length>4 && b[0]=='%' && b[1]=='P' && b[2]=='D' && b[3]=='F' && b[4]=='-';
@@ -66,7 +68,7 @@ class ResourceController {
         return types && document;
     }
     @PostMapping("/resources") @Transactional
-    Map<String,Object> create(Authentication auth,@RequestBody Map<String,Object> input) {
+    public Map<String,Object> create(Authentication auth,@RequestBody Map<String,Object> input) {
         k.forum.writable(auth); k.check(Boolean.TRUE.equals(input.get("integrityAccepted")),"请确认版权与学术诚信声明");
         if(!(input.get("files") instanceof List<?> files) || files.isEmpty() || files.size()>10)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"请选择 1 至 10 个文件");
         long points=k.number(input,"downloadPoints",0); k.check(points>=0 && points<=100,"下载积分须为 0 至 100");
@@ -78,14 +80,14 @@ class ResourceController {
         return Map.of("id",id,"status","pending");
     }
     @GetMapping("/resources/{id}")
-    Map<String,Object> detail(Authentication auth,@PathVariable long id) {
+    public Map<String,Object> detail(Authentication auth,@PathVariable long id) {
         var r=k.resource(auth,id); r.put("files",k.db.queryForList("SELECT id,file_name,size_bytes,mime_type FROM resource_files WHERE resource_id=?",id));
         r.put("comments",k.db.queryForList("SELECT c.*,u.username FROM resource_comments c JOIN users u ON u.id=c.user_id WHERE c.resource_id=? ORDER BY c.id DESC LIMIT 100",id));
         r.put("favorited",k.row("SELECT 1 FROM resource_favorites WHERE resource_id=? AND user_id=?",id,k.user(auth))!=null); r.put("liked",k.row("SELECT 1 FROM resource_votes WHERE resource_id=? AND user_id=?",id,k.user(auth))!=null);
         r.put("favorite_count",k.db.queryForObject("SELECT COUNT(*) FROM resource_favorites WHERE resource_id=?",Long.class,id)); r.put("like_count",k.db.queryForObject("SELECT COUNT(*) FROM resource_votes WHERE resource_id=?",Long.class,id));return r;
     }
     @PostMapping("/resources/{id}/download") @Transactional
-    Map<String,Object> download(Authentication auth,@PathVariable long id) {
+    public Map<String,Object> download(Authentication auth,@PathVariable long id) {
         k.forum.writable(auth); k.resource(auth,id); var r=k.required("SELECT * FROM resources WHERE id=? FOR UPDATE",id); k.check("published".equals(r.get("status")),"仅已发布资料可以下载");
         var files=k.db.queryForList("SELECT id,file_name,size_bytes FROM resource_files WHERE resource_id=?",id); k.check(!files.isEmpty(),"资料没有文件");
         long me=k.user(auth),cost=k.n(r,"download_points");
@@ -98,7 +100,7 @@ class ResourceController {
         return Map.of("files",files);
     }
     @GetMapping("/resources/{id}/files/{fileId}")
-    ResponseEntity<FileSystemResource> file(Authentication auth,@PathVariable long id,@PathVariable long fileId) throws IOException {
+    public ResponseEntity<FileSystemResource> file(Authentication auth,@PathVariable long id,@PathVariable long fileId) throws IOException {
         var r=k.resource(auth,id); long me=k.user(auth);
         boolean privileged=me>0 && (me==k.n(r,"uploader_id") || k.manager(auth,-1));
         if(!privileged && (!"published".equals(r.get("status")) || me==0 || k.row("SELECT id FROM resource_downloads WHERE resource_id=? AND user_id=? LIMIT 1",id,me)==null))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"请先点击下载资料");
@@ -107,18 +109,18 @@ class ResourceController {
         return ResponseEntity.ok().header("X-Content-Type-Options","nosniff").header(HttpHeaders.CACHE_CONTROL,"no-store").header(HttpHeaders.CONTENT_DISPOSITION,ContentDisposition.attachment().filename(String.valueOf(f.get("file_name")),java.nio.charset.StandardCharsets.UTF_8).build().toString()).contentType(MediaType.APPLICATION_OCTET_STREAM).contentLength(Files.size(target)).body(new FileSystemResource(target));
     }
     @PostMapping("/resources/{id}/{action:favorite|like}") @Transactional
-    void toggle(Authentication auth,@PathVariable long id,@PathVariable String action,@RequestBody Map<String,Object> input) {
+    public void toggle(Authentication auth,@PathVariable long id,@PathVariable String action,@RequestBody Map<String,Object> input) {
         k.forum.writable(auth);var r=k.resource(auth,id);k.check("published".equals(r.get("status")),"资料尚未发布");String table=action.equals("favorite")?"resource_favorites":"resource_votes";
         if(Boolean.TRUE.equals(input.get("active")))k.db.update("INSERT IGNORE INTO "+table+"(resource_id,user_id) VALUES(?,?)",id,k.user(auth));else k.db.update("DELETE FROM "+table+" WHERE resource_id=? AND user_id=?",id,k.user(auth));
     }
     @PostMapping("/resources/{id}/comments")
-    void comment(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input){k.forum.writable(auth);k.check("published".equals(k.resource(auth,id).get("status")),"资料尚未发布");k.db.update("INSERT INTO resource_comments(resource_id,user_id,content) VALUES(?,?,?)",id,k.user(auth),k.text(input,"content",1,1000));}
+    public void comment(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input){k.forum.writable(auth);k.check("published".equals(k.resource(auth,id).get("status")),"资料尚未发布");k.db.update("INSERT INTO resource_comments(resource_id,user_id,content) VALUES(?,?,?)",id,k.user(auth),k.text(input,"content",1,1000));}
     @PostMapping("/resources/{id}/report")
-    void report(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input){k.forum.writable(auth);k.resource(auth,id);long count=Objects.requireNonNullElse(k.db.queryForObject("SELECT COUNT(*) FROM reports WHERE reporter_id=? AND created_at>=CURRENT_DATE",Long.class,k.user(auth)),0L);k.check(count<5,"今日举报次数已达上限");k.db.update("INSERT INTO reports(reporter_id,target_type,target_id,reason,description) VALUES(?,'resource',?,?,?)",k.user(auth),id,k.text(input,"reason",1,40),k.text(input,"description",0,500));}
+    public void report(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input){k.forum.writable(auth);k.resource(auth,id);long count=Objects.requireNonNullElse(k.db.queryForObject("SELECT COUNT(*) FROM reports WHERE reporter_id=? AND created_at>=CURRENT_DATE",Long.class,k.user(auth)),0L);k.check(count<5,"今日举报次数已达上限");k.db.update("INSERT INTO reports(reporter_id,target_type,target_id,reason,description) VALUES(?,'resource',?,?,?)",k.user(auth),id,k.text(input,"reason",1,40),k.text(input,"description",0,500));}
     @GetMapping("/resources/downloads")
-    List<Map<String,Object>> downloads(Authentication auth){return k.db.queryForList("SELECT d.*,r.title FROM resource_downloads d JOIN resources r ON r.id=d.resource_id WHERE d.user_id=? ORDER BY d.id DESC LIMIT 100",k.forum.id(auth));}
+    public List<Map<String,Object>> downloads(Authentication auth){return k.db.queryForList("SELECT d.*,r.title FROM resource_downloads d JOIN resources r ON r.id=d.resource_id WHERE d.user_id=? ORDER BY d.id DESC LIMIT 100",k.forum.id(auth));}
     @GetMapping("/admin/resources")
-    Map<String,Object> admin(Authentication auth,@RequestParam(defaultValue="1") int page){k.forum.admin(auth);return k.page(k.db.queryForList("SELECT r.*,u.username FROM resources r JOIN users u ON u.id=r.uploader_id ORDER BY r.status='pending' DESC,r.id DESC LIMIT 21 OFFSET ?",k.offset(page)));}
+    public Map<String,Object> admin(Authentication auth,@RequestParam(defaultValue="1") int page){k.forum.admin(auth);return k.page(k.db.queryForList("SELECT r.*,u.username FROM resources r JOIN users u ON u.id=r.uploader_id ORDER BY r.status='pending' DESC,r.id DESC LIMIT 21 OFFSET ?",k.offset(page)));}
     @PatchMapping("/admin/resources/{id}") @Transactional
-    void moderate(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input){k.forum.admin(auth);k.required("SELECT id FROM resources WHERE id=?",id);String status=k.choice(input,"status","pending","pending","published","rejected");String note=k.text(input,"note",1,500);k.db.update("UPDATE resources SET status=? WHERE id=?",status,id);k.audit(auth,"resource_"+status,"resource",id,note);}
+    public void moderate(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input){k.forum.admin(auth);k.required("SELECT id FROM resources WHERE id=?",id);String status=k.choice(input,"status","pending","pending","published","rejected");String note=k.text(input,"note",1,500);k.db.update("UPDATE resources SET status=? WHERE id=?",status,id);k.audit(auth,"resource_"+status,"resource",id,note);}
 }

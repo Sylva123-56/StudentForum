@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
+import com.studentforum.service.StudyToolService;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -21,14 +24,14 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/api/checkin")
-class CheckinController {
+public class CheckinController {
     private static final Set<String> FREQUENCIES = Set.of("daily", "weekly");
 
     private final JdbcTemplate db;
     private final ForumService service;
     private final StudyToolService tools;
 
-    CheckinController(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public CheckinController(JdbcTemplate db, ForumService service, StudyToolService tools) {
         this.db = db;
         this.service = service;
         this.tools = tools;
@@ -66,13 +69,13 @@ class CheckinController {
     // ---------- 设置与统计 ----------
 
     @GetMapping("/settings")
-    Map<String, Object> settings() {
+    public Map<String, Object> settings() {
         return tools.settings();
     }
 
     /** 打卡总览：今日打了几个目标、总天数、当前与最长连续天数、专注与积分汇总。 */
     @GetMapping("/stats")
-    Map<String, Object> stats(Authentication auth) {
+    public Map<String, Object> stats(Authentication auth) {
         long user = id(auth);
         LocalDate today = LocalDate.now();
         Map<String, Object> result = new LinkedHashMap<>();
@@ -106,7 +109,7 @@ class CheckinController {
 
     /** 打卡日历：默认当月，最多回溯 12 个月；返回每天打了几个目标、多少分钟。 */
     @GetMapping("/calendar")
-    Map<String, Object> calendar(Authentication auth,
+    public Map<String, Object> calendar(Authentication auth,
                                 @RequestParam(required = false) Integer year,
                                 @RequestParam(required = false) Integer month) {
         long user = id(auth);
@@ -143,7 +146,7 @@ class CheckinController {
     // ---------- 我的目标 ----------
 
     @GetMapping("/goals")
-    List<Map<String, Object>> goals(Authentication auth, @RequestParam(defaultValue = "active") String status) {
+    public List<Map<String, Object>> goals(Authentication auth, @RequestParam(defaultValue = "active") String status) {
         long user = id(auth);
         String filter = Set.of("active", "archived", "all").contains(status) ? status : "active";
         String clause = switch (filter) {
@@ -172,7 +175,7 @@ class CheckinController {
 
     /** 学生广场：别人的公开打卡目标，用来互相监督。 */
     @GetMapping("/public")
-    List<Map<String, Object>> publicGoals(Authentication auth, @RequestParam(defaultValue = "") String subject) {
+    public List<Map<String, Object>> publicGoals(Authentication auth, @RequestParam(defaultValue = "") String subject) {
         Long me = userOrNull(auth);
         StringBuilder sql = new StringBuilder("SELECT g.id,g.title,g.subject,g.frequency,g.target_minutes,g.visibility,g.created_at,u.username AS owner_username,u.id AS owner_id,"
                 + "(SELECT COUNT(*) FROM checkins c WHERE c.goal_id=g.id) AS checkin_count,"
@@ -203,7 +206,7 @@ class CheckinController {
 
     /** 打卡记录流：默认自己发起过的全部打卡，可按目标筛选。 */
     @GetMapping("/records")
-    Map<String, Object> records(Authentication auth,
+    public Map<String, Object> records(Authentication auth,
                                @RequestParam(required = false) Long goalId,
                                @RequestParam(defaultValue = "1") int page) {
         long user = id(auth);
@@ -226,7 +229,7 @@ class CheckinController {
 
     @PostMapping("/goals")
     @Transactional
-    Map<String, Object> createGoal(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> createGoal(Authentication auth, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         String title = tools.text(input, "title", 2, 80, "目标名称需要 2 至 80 个字");
@@ -249,7 +252,7 @@ class CheckinController {
     }
 
     @PatchMapping("/goals/{goalId}")
-    Map<String, Object> updateGoal(Authentication auth, @PathVariable long goalId, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> updateGoal(Authentication auth, @PathVariable long goalId, @RequestBody Map<String, Object> input) {
         long user = id(auth);
         Map<String, Object> old = goalForUpdate(goalId, user);
         String title = input.containsKey("title") ? tools.text(input, "title", 2, 80, "目标名称需要 2 至 80 个字") : String.valueOf(old.get("title"));
@@ -270,7 +273,7 @@ class CheckinController {
     }
 
     @PatchMapping("/goals/{goalId}/archive")
-    Map<String, Object> archiveGoal(Authentication auth, @PathVariable long goalId, @RequestBody(required = false) Map<String, Object> input) {
+    public Map<String, Object> archiveGoal(Authentication auth, @PathVariable long goalId, @RequestBody(required = false) Map<String, Object> input) {
         long user = id(auth);
         Map<String, Object> goal = goalForUpdate(goalId, user);
         boolean archive = input == null || !input.containsKey("archived") || Boolean.TRUE.equals(input.get("archived"));
@@ -280,7 +283,7 @@ class CheckinController {
 
     @DeleteMapping("/goals/{goalId}")
     @Transactional
-    void deleteGoal(Authentication auth, @PathVariable long goalId) {
+    public void deleteGoal(Authentication auth, @PathVariable long goalId) {
         long user = id(auth);
         goalForUpdate(goalId, user);
         // checkins 有 ON DELETE CASCADE，历史打卡会跟着目标一起走；积分流水按项目惯例保留
@@ -292,7 +295,7 @@ class CheckinController {
     /** 每日打卡。系统代打（番茄钟/计划任务）走 source 与 planId/taskId，并把关联列记下来备查。 */
     @PostMapping
     @Transactional
-    Map<String, Object> checkin(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> checkin(Authentication auth, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         long goalId = tools.number(input, "goalId", 0);
@@ -356,18 +359,18 @@ class CheckinController {
 
     /** 徽章图鉴：已获得的带 earned/earned_at，未获得的也要返回，前端才能显示"未点亮"的徽章。 */
     @GetMapping("/badges")
-    Map<String, Object> badges(Authentication auth) {
+    public Map<String, Object> badges(Authentication auth) {
         return Map.of("items", tools.badgeCatalog(id(auth)));
     }
 
     @GetMapping("/goals/{goalId}")
-    Map<String, Object> goalDetail(Authentication auth, @PathVariable long goalId) {
+    public Map<String, Object> goalDetail(Authentication auth, @PathVariable long goalId) {
         return goal(goalId, auth);
     }
 
     /** 某个目标的打卡记录，用于目标详情页的日历。 */
     @GetMapping("/goals/{goalId}/records")
-    Map<String, Object> goalRecords(Authentication auth, @PathVariable long goalId, @RequestParam(defaultValue = "30") int days) {
+    public Map<String, Object> goalRecords(Authentication auth, @PathVariable long goalId, @RequestParam(defaultValue = "30") int days) {
         long user = id(auth);
         Map<String, Object> goal = goalForUpdate(goalId, user);
         int span = Math.max(7, Math.min(365, days));

@@ -1,4 +1,6 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
 
 import java.io.IOException;
 import java.nio.file.Files;

@@ -1,4 +1,4 @@
-package com.studentforum;
+package com.studentforum.mapper;
 
 import java.util.List;
 import java.util.Map;

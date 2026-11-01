@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
+import com.studentforum.service.StudyToolService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -19,7 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
  */
 @RestController
 @RequestMapping("/api/study-rooms")
-class StudyRoomController {
+public class StudyRoomController {
     private static final Set<String> VISIBILITIES = Set.of("public", "private");
     private static final Set<String> KINDS = Set.of("text", "encourage", "system");
     private static final int MAX_MESSAGES = 50;
@@ -28,7 +31,7 @@ class StudyRoomController {
     private final ForumService service;
     private final StudyToolService tools;
 
-    StudyRoomController(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public StudyRoomController(JdbcTemplate db, ForumService service, StudyToolService tools) {
         this.db = db;
         this.service = service;
         this.tools = tools;
@@ -73,7 +76,7 @@ class StudyRoomController {
     // ---------- 房间 ----------
 
     @GetMapping
-    Map<String, Object> rooms(Authentication auth, @RequestParam(defaultValue = "all") String scope) {
+    public Map<String, Object> rooms(Authentication auth, @RequestParam(defaultValue = "all") String scope) {
         Long user = viewer(auth);
         List<Object> args = new ArrayList<>();
         StringBuilder sql = new StringBuilder("SELECT r.*,u.username AS owner_username,(SELECT COUNT(*) FROM study_room_members m WHERE m.room_id=r.id) AS members FROM study_rooms r JOIN users u ON u.id=r.owner_id WHERE 1=1");
@@ -104,7 +107,7 @@ class StudyRoomController {
 
     @PostMapping
     @Transactional
-    Map<String, Object> createRoom(Authentication auth, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> createRoom(Authentication auth, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         String name = tools.text(input, "name", 2, 40, "自习室名称需要 2 到 40 个字");
@@ -137,7 +140,7 @@ class StudyRoomController {
     }
 
     @GetMapping("/{roomId}")
-    Map<String, Object> room(Authentication auth, @PathVariable long roomId) {
+    public Map<String, Object> room(Authentication auth, @PathVariable long roomId) {
         long user = guest(auth);
         Map<String, Object> result = room(roomId, user);
         // 房间消息默认就带回来，前端不必再发一次请求
@@ -148,7 +151,7 @@ class StudyRoomController {
 
     @PostMapping("/{roomId}/join")
     @Transactional
-    Map<String, Object> join(Authentication auth, @PathVariable long roomId) {
+    public Map<String, Object> join(Authentication auth, @PathVariable long roomId) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
@@ -163,7 +166,7 @@ class StudyRoomController {
 
     @PostMapping("/{roomId}/leave")
     @Transactional
-    Map<String, Object> leave(Authentication auth, @PathVariable long roomId) {
+    public Map<String, Object> leave(Authentication auth, @PathVariable long roomId) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
@@ -175,7 +178,7 @@ class StudyRoomController {
 
     @PatchMapping("/{roomId}")
     @Transactional
-    Map<String, Object> updateRoom(Authentication auth, @PathVariable long roomId, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> updateRoom(Authentication auth, @PathVariable long roomId, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
@@ -202,7 +205,7 @@ class StudyRoomController {
 
     @DeleteMapping("/{roomId}")
     @Transactional
-    Map<String, Object> deleteRoom(Authentication auth, @PathVariable long roomId) {
+    public Map<String, Object> deleteRoom(Authentication auth, @PathVariable long roomId) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
@@ -214,7 +217,7 @@ class StudyRoomController {
     // ---------- 消息与排行 ----------
 
     @GetMapping("/{roomId}/messages")
-    Map<String, Object> messages(Authentication auth, @PathVariable long roomId) {
+    public Map<String, Object> messages(Authentication auth, @PathVariable long roomId) {
         long user = guest(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
         tools.requireRoomView(row, user);
@@ -228,7 +231,7 @@ class StudyRoomController {
     /** 发文字鼓励。静音房间里只有房主能说话，避免打扰正在专注的人。 */
     @PostMapping("/{roomId}/messages")
     @Transactional
-    Map<String, Object> sendMessage(Authentication auth, @PathVariable long roomId, @RequestBody Map<String, Object> input) {
+    public Map<String, Object> sendMessage(Authentication auth, @PathVariable long roomId, @RequestBody Map<String, Object> input) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
@@ -246,7 +249,7 @@ class StudyRoomController {
     }
 
     @DeleteMapping("/{roomId}/messages/{messageId}")
-    Map<String, Object> deleteMessage(Authentication auth, @PathVariable long roomId, @PathVariable long messageId) {
+    public Map<String, Object> deleteMessage(Authentication auth, @PathVariable long roomId, @PathVariable long messageId) {
         service.writable(auth);
         long user = id(auth);
         Map<String, Object> room = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
@@ -259,7 +262,7 @@ class StudyRoomController {
 
     /** 自习室里的专注时长榜（房间内排名），和全站排行是两套口径。 */
     @GetMapping("/{roomId}/leaderboard")
-    Map<String, Object> leaderboard(Authentication auth, @PathVariable long roomId) {
+    public Map<String, Object> leaderboard(Authentication auth, @PathVariable long roomId) {
         long user = guest(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
         tools.requireRoomView(row, user);
@@ -272,7 +275,7 @@ class StudyRoomController {
 
     /** 学习小组成员一起进的自习室：给小组页一个"我们的自习室"入口。 */
     @GetMapping("/for-group/{groupId}")
-    Map<String, Object> forGroup(Authentication auth, @PathVariable long groupId) {
+    public Map<String, Object> forGroup(Authentication auth, @PathVariable long groupId) {
         long user = guest(auth);
         check(tools.row("SELECT 1 FROM study_group_members WHERE group_id=? AND user_id=?", groupId, user) != null, "需要先加入该学习小组");
         return Map.of("items", db.queryForList("SELECT r.*,u.username AS owner_username FROM study_rooms r JOIN users u ON u.id=r.owner_id WHERE r.group_id=? AND r.status='active' ORDER BY r.created_at DESC LIMIT 20", groupId));

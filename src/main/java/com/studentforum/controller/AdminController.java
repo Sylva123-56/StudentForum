@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.mapper.ForumMapper;
+import com.studentforum.service.ForumService;
 
 import java.util.HashMap;
 import java.util.List;
@@ -15,8 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class AdminController {
     private final ForumMapper mapper;
     private final ForumService service;
-    AdminController(ForumMapper mapper,ForumService service) { this.mapper=mapper; this.service=service; }
-    @GetMapping("/dashboard") Map<String,Object> dashboard(Authentication auth) { service.staff(auth); return mapper.dashboard(); }
+    public AdminController(ForumMapper mapper,ForumService service) { this.mapper=mapper; this.service=service; }
+    @GetMapping("/dashboard") public Map<String,Object> dashboard(Authentication auth) { service.staff(auth); return mapper.dashboard(); }
     private String keyword(String keyword) {
         String value=keyword==null?"":keyword.trim();
         if (value.length()>60) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"搜索关键词不能超过 60 个字");
@@ -31,36 +34,36 @@ public class AdminController {
         return Map.of("items",hasNext?rows.subList(0,PAGE_SIZE):rows,"hasNext",hasNext);
     }
     private static final int PAGE_SIZE=20;
-    @GetMapping("/users") Map<String,Object> users(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+    @GetMapping("/users") public Map<String,Object> users(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
         service.admin(auth); return paged(mapper.users(keyword(keyword),PAGE_SIZE+1,offset(page)));
     }
-    @GetMapping("/posts") Map<String,Object> posts(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+    @GetMapping("/posts") public Map<String,Object> posts(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
         service.staff(auth);
         Map<String,Object> user=service.current(auth);
         List<Long> boards="admin".equals(user.get("role"))?null:List.of(user.get("moderator_board_id")==null?-1L:service.number(user,"moderator_board_id"));
         return paged(mapper.adminPosts(keyword(keyword),boards,PAGE_SIZE+1,offset(page)));
     }
-    @GetMapping("/reports") Map<String,Object> reports(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+    @GetMapping("/reports") public Map<String,Object> reports(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
         service.staff(auth);
         Map<String,Object> user=service.current(auth);
         Long boardId="admin".equals(user.get("role"))?null:user.get("moderator_board_id")==null?-1L:service.number(user,"moderator_board_id");
         return paged(mapper.reports(keyword(keyword),boardId,PAGE_SIZE+1,offset(page)));
     }
-    @PatchMapping("/posts/{id}/feature") void feature(Authentication auth,@PathVariable long id,@RequestBody Map<String,Boolean> input) { service.feature(auth,id,Boolean.TRUE.equals(input.get("featured"))); }
-    @PatchMapping("/posts/{id}/top") void top(Authentication auth,@PathVariable long id,@RequestBody Map<String,Boolean> input) {
+    @PatchMapping("/posts/{id}/feature") public void feature(Authentication auth,@PathVariable long id,@RequestBody Map<String,Boolean> input) { service.feature(auth,id,Boolean.TRUE.equals(input.get("featured"))); }
+    @PatchMapping("/posts/{id}/top") public void top(Authentication auth,@PathVariable long id,@RequestBody Map<String,Boolean> input) {
         Map<String,Object> post=service.require(mapper.post(id)); service.moderate(auth,service.number(post,"board_id")); mapper.top(id,Boolean.TRUE.equals(input.get("top"))); mapper.adminLog(service.id(auth),"top","post",id,String.valueOf(input.get("top")));
     }
-    @PatchMapping("/posts/{id}/status") void status(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+    @PatchMapping("/posts/{id}/status") public void status(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
         Map<String,Object> post=service.require(mapper.post(id)); service.moderate(auth,service.number(post,"board_id"));
         String status=input.get("status"); if (!Set.of("published","hidden","deleted").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         mapper.postStatus(id,status); mapper.adminLog(service.id(auth),"status","post",id,status);
     }
-    @PatchMapping("/reports/{id}") void handle(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) { service.handle(auth,id,input); }
-    @PatchMapping("/users/{id}/status") void userStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+    @PatchMapping("/reports/{id}") public void handle(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) { service.handle(auth,id,input); }
+    @PatchMapping("/users/{id}/status") public void userStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
         service.admin(auth); String status=input.get("status"); if (!Set.of("active","muted","banned").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         service.require(mapper.user(id)); mapper.userStatus(id,status); mapper.adminLog(service.id(auth),"user_status","user",id,status);
     }
-    @PatchMapping("/users/{id}/role") void role(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
+    @PatchMapping("/users/{id}/role") public void role(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
         service.admin(auth); String role=String.valueOf(input.get("role"));
         if (!Set.of("student","moderator","admin").contains(role)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST);
         Long board=input.get("boardId")==null?null:((Number)input.get("boardId")).longValue();
@@ -75,19 +78,19 @@ public class AdminController {
         mapper.userRole(id,role,"moderator".equals(role)?board:null);
         mapper.adminLog(service.id(auth),"role","user",id,"moderator".equals(role)?role+" · "+boardName:role);
     }
-    @PostMapping("/users/{id}/points") @Transactional void adjust(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
+    @PostMapping("/users/{id}/points") @Transactional public void adjust(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
         service.admin(auth); service.require(mapper.user(id)); int amount=((Number)input.get("amount")).intValue();
         if (amount==0 || Math.abs(amount)>1000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"积分调整范围为 -1000 到 1000，且不能为 0");
         int before=mapper.points(id); mapper.addPoints(id,amount); int after=mapper.points(id);
         mapper.pointLog(id,"adjust",after-before,after,"user",id); mapper.adminLog(service.id(auth),"points","user",id,String.valueOf(amount));
     }
-    @GetMapping("/points") Map<String,Object> pointLogs(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+    @GetMapping("/points") public Map<String,Object> pointLogs(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
         service.admin(auth); return paged(mapper.adminLogs(keyword(keyword),PAGE_SIZE+1,offset(page)));
     }
-    @GetMapping("/boards") Map<String,Object> boardList(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+    @GetMapping("/boards") public Map<String,Object> boardList(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
         service.admin(auth); return paged(mapper.adminBoards(keyword(keyword),PAGE_SIZE+1,offset(page)));
     }
-    @GetMapping("/tags") Map<String,Object> tagList(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
+    @GetMapping("/tags") public Map<String,Object> tagList(Authentication auth,@RequestParam(required=false) String keyword,@RequestParam(defaultValue="1") int page) {
         service.admin(auth); return paged(mapper.adminTags(keyword(keyword),PAGE_SIZE+1,offset(page)));
     }
     private String boardName(Map<String,Object> input) {
@@ -117,19 +120,19 @@ public class AdminController {
         if (name.length()>40) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签名称不能超过 40 个字");
         return name;
     }
-    @PostMapping("/boards") void board(Authentication auth,@RequestBody Map<String,Object> input) {
+    @PostMapping("/boards") public void board(Authentication auth,@RequestBody Map<String,Object> input) {
         service.admin(auth); String name=boardName(input),slug=boardSlug(input);
         if (mapper.boardSlugTaken(slug,0)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块标识已被使用");
         mapper.addBoard(name,slug,boardDescription(input),sortOrder(input)); mapper.adminLog(service.id(auth),"create","board",0,name);
     }
-    @PatchMapping("/boards/{id}") void editBoard(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
+    @PatchMapping("/boards/{id}") public void editBoard(Authentication auth,@PathVariable long id,@RequestBody Map<String,Object> input) {
         service.admin(auth); Map<String,Object> board=service.require(mapper.adminBoard(id));
         String name=boardName(input),slug=boardSlug(input);
         if (mapper.boardSlugTaken(slug,id)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块标识已被使用");
         mapper.editBoard(id,name,slug,boardDescription(input),sortOrder(input));
         mapper.adminLog(service.id(auth),"edit","board",id,String.valueOf(board.get("name"))+" → "+name);
     }
-    @PatchMapping("/boards/{id}/status") void boardStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+    @PatchMapping("/boards/{id}/status") public void boardStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
         service.admin(auth); Map<String,Object> board=service.require(mapper.adminBoard(id));
         String status=input.getOrDefault("status","");
         if (!Set.of("enabled","disabled").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"板块状态无效");
@@ -137,23 +140,23 @@ public class AdminController {
         if (("enabled".equals(status)?mapper.enableBoard(id):mapper.disableBoard(id))==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块状态已发生变化");
         mapper.adminLog(service.id(auth),"enabled".equals(status)?"enable":"disable","board",id,String.valueOf(board.get("name")));
     }
-    @DeleteMapping("/boards/{id}") void deleteBoard(Authentication auth,@PathVariable long id) {
+    @DeleteMapping("/boards/{id}") public void deleteBoard(Authentication auth,@PathVariable long id) {
         service.admin(auth); Map<String,Object> board=service.require(mapper.adminBoard(id));
         if (!"enabled".equals(board.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块已经停用");
         if (mapper.disableBoard(id)==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"板块状态已发生变化");
         mapper.adminLog(service.id(auth),"disable","board",id,String.valueOf(board.get("name")));
     }
-    @PostMapping("/tags") void tag(Authentication auth,@RequestBody Map<String,String> input) {
+    @PostMapping("/tags") public void tag(Authentication auth,@RequestBody Map<String,String> input) {
         service.admin(auth); String name=tagName(input);
         if (mapper.tagNameTaken(name,0)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签名称已存在");
         mapper.addTag(name); mapper.adminLog(service.id(auth),"create","tag",0,name);
     }
-    @PatchMapping("/tags/{id}") void editTag(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+    @PatchMapping("/tags/{id}") public void editTag(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
         service.admin(auth); Map<String,Object> tag=service.require(mapper.adminTag(id)); String name=tagName(input);
         if (mapper.tagNameTaken(name,id)>0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签名称已存在");
         mapper.editTag(id,name); mapper.adminLog(service.id(auth),"edit","tag",id,String.valueOf(tag.get("name"))+" → "+name);
     }
-    @PatchMapping("/tags/{id}/status") void tagStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+    @PatchMapping("/tags/{id}/status") public void tagStatus(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
         service.admin(auth); Map<String,Object> tag=service.require(mapper.adminTag(id));
         String status=input.getOrDefault("status","");
         if (!Set.of("enabled","disabled").contains(status)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"标签状态无效");
@@ -161,7 +164,7 @@ public class AdminController {
         if (("enabled".equals(status)?mapper.enableTag(id):mapper.disableTag(id))==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签状态已发生变化");
         mapper.adminLog(service.id(auth),"enabled".equals(status)?"enable":"disable","tag",id,String.valueOf(tag.get("name")));
     }
-    @DeleteMapping("/tags/{id}") void deleteTag(Authentication auth,@PathVariable long id) {
+    @DeleteMapping("/tags/{id}") public void deleteTag(Authentication auth,@PathVariable long id) {
         service.admin(auth); Map<String,Object> tag=service.require(mapper.adminTag(id));
         if (!"enabled".equals(tag.get("status"))) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签已经停用");
         if (mapper.disableTag(id)==0) throw new ResponseStatusException(HttpStatus.CONFLICT,"标签状态已发生变化");
@@ -173,10 +176,10 @@ public class AdminController {
         if (message.length()>255) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"公告内容不能超过 255 个字");
         return message;
     }
-    @GetMapping("/announcements") Map<String,Object> announcements(Authentication auth,@RequestParam(defaultValue="1") int page) {
+    @GetMapping("/announcements") public Map<String,Object> announcements(Authentication auth,@RequestParam(defaultValue="1") int page) {
         service.admin(auth); return paged(mapper.adminAnnouncements(PAGE_SIZE+1,offset(page)));
     }
-    @PostMapping("/announcements") @Transactional void announcement(Authentication auth,@RequestBody Map<String,String> input) {
+    @PostMapping("/announcements") @Transactional public void announcement(Authentication auth,@RequestBody Map<String,String> input) {
         service.admin(auth); long actor=service.id(auth); String message=announcementMessage(input);
         Map<String,Object> announcement=new HashMap<>();
         announcement.put("adminId",actor); announcement.put("message",message);
@@ -187,13 +190,13 @@ public class AdminController {
         mapper.readOwnAnnouncement(id,actor);
         mapper.adminLog(actor,"announcement","announcement",id,message);
     }
-    @PatchMapping("/announcements/{id}") @Transactional void editAnnouncement(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
+    @PatchMapping("/announcements/{id}") @Transactional public void editAnnouncement(Authentication auth,@PathVariable long id,@RequestBody Map<String,String> input) {
         service.admin(auth); service.require(mapper.announcementById(id));
         String message=announcementMessage(input);
         mapper.editAnnouncement(id,message); mapper.editAnnouncementMessages(id,message); mapper.readOwnAnnouncement(id,service.id(auth));
         mapper.adminLog(service.id(auth),"edit","announcement",id,message);
     }
-    @DeleteMapping("/announcements/{id}") void deleteAnnouncement(Authentication auth,@PathVariable long id) {
+    @DeleteMapping("/announcements/{id}") public void deleteAnnouncement(Authentication auth,@PathVariable long id) {
         service.admin(auth); Map<String,Object> announcement=service.require(mapper.announcementById(id));
         mapper.deleteAnnouncement(id);
         mapper.adminLog(service.id(auth),"delete","announcement",id,String.valueOf(announcement.get("message")));

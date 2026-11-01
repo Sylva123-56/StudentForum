@@ -1,4 +1,4 @@
-package com.studentforum;
+package com.studentforum.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,9 +19,9 @@ import java.io.IOException;
 
 @Configuration
 public class SecurityConfig {
-    @Bean PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
-    @Bean HttpSessionSecurityContextRepository contextRepository() { return new HttpSessionSecurityContextRepository(); }
-    @Bean SecurityFilterChain security(HttpSecurity http, HttpSessionSecurityContextRepository repository) throws Exception {
+    @Bean public PasswordEncoder passwordEncoder() { return new BCryptPasswordEncoder(); }
+    @Bean public HttpSessionSecurityContextRepository contextRepository() { return new HttpSessionSecurityContextRepository(); }
+    @Bean public SecurityFilterChain security(HttpSecurity http, HttpSessionSecurityContextRepository repository) throws Exception {
         http.securityContext(config -> config.securityContextRepository(repository))
             .csrf(config -> config.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
             .authorizeHttpRequests(config -> config.requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "MODERATOR")

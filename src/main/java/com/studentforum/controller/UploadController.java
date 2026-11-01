@@ -1,4 +1,6 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,8 +21,8 @@ import org.springframework.context.annotation.Configuration;
 public class UploadController {
     private final Path directory;
     private final ForumService service;
-    UploadController(@Value("${forum.uploads}") String path,ForumService service) { this.directory=Path.of(path).toAbsolutePath().normalize(); this.service=service; }
-    @PostMapping("/api/uploads") Map<String,String> upload(Authentication auth,@RequestParam MultipartFile file) throws IOException {
+    public UploadController(@Value("${forum.uploads}") String path,ForumService service) { this.directory=Path.of(path).toAbsolutePath().normalize(); this.service=service; }
+    @PostMapping("/api/uploads") public Map<String,String> upload(Authentication auth,@RequestParam MultipartFile file) throws IOException {
         service.writable(auth);
         if (file.isEmpty() || file.getSize()>5_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"图片不能超过 5MB");
         byte[] bytes=file.getBytes(); String extension;
@@ -32,7 +34,7 @@ public class UploadController {
         String name=UUID.randomUUID()+"."+extension; Files.write(directory.resolve(name),bytes);
         return Map.of("path","/uploads/"+name);
     }
-    @PostMapping("/api/attachments") Map<String,String> attachment(Authentication auth,@RequestParam MultipartFile file) throws IOException {
+    @PostMapping("/api/attachments") public Map<String,String> attachment(Authentication auth,@RequestParam MultipartFile file) throws IOException {
         service.writable(auth);
         if (file.isEmpty() || file.getSize()>5_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"附件不能超过 5MB");
         String name=String.valueOf(file.getOriginalFilename()).toLowerCase();

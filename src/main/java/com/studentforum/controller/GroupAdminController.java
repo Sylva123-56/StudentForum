@@ -1,4 +1,6 @@
-package com.studentforum;
+package com.studentforum.controller;
+
+import com.studentforum.service.ForumService;
 
 import java.util.List;
 import java.util.Map;

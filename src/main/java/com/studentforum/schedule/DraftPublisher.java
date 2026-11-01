@@ -1,4 +1,7 @@
-package com.studentforum;
+package com.studentforum.schedule;
+
+import com.studentforum.mapper.ForumMapper;
+import com.studentforum.service.ForumService;
 
 import java.util.List;
 import java.util.Map;
@@ -15,7 +18,7 @@ public class DraftPublisher {
     private final ForumService service;
     private final TransactionTemplate transactions;
 
-    DraftPublisher(JdbcTemplate db, ForumMapper mapper, ForumService service, TransactionTemplate transactions) {
+    public DraftPublisher(JdbcTemplate db, ForumMapper mapper, ForumService service, TransactionTemplate transactions) {
         this.db = db;
         this.mapper = mapper;
         this.service = service;
