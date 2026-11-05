@@ -20,6 +20,7 @@ public class KnowledgeService {
     public long user(Authentication auth) { return auth==null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal()) ? 0 : forum.id(auth); }
     public Map<String,Object> row(String sql,Object... args) { return db.queryForList(sql,args).stream().findFirst().orElse(null); }
     public Map<String,Object> required(String sql,Object... args) { Map<String,Object> r=row(sql,args); if(r==null) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"内容不存在或无权查看"); return new LinkedHashMap<>(r); }
+    public Map<String,Object> required(Map<String,Object> row) { if(row==null)throw new ResponseStatusException(HttpStatus.NOT_FOUND,"内容不存在或无权查看");return new LinkedHashMap<>(row); }
     public long n(Map<String,Object> r,String key) { Object v=r.get(key); return v instanceof Number x ? x.longValue() : 0; }
     public long number(Map<String,Object> r,String key,long fallback) {
         Object v=r.get(key); if(v==null || "".equals(v)) return fallback;

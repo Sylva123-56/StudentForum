@@ -1,5 +1,7 @@
 package com.studentforum.service;
 
+import com.studentforum.repository.MistakeImageRepository;
+
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
@@ -18,22 +20,24 @@ import org.springframework.web.server.ResponseStatusException;
 /** Images are private storage, not static /uploads URLs; a shared image follows its mistake ACL. */
 @Service
 public class MistakeImageService {
+    private final MistakeImageRepository repository;
+    private final AccountAccessService accounts;
     private final KnowledgeService k;
     private final Path directory;
-    public MistakeImageService(KnowledgeService k,@Value("${forum.knowledge-files:knowledge-files}") String path){this.k=k;directory=Path.of(path).toAbsolutePath().normalize().resolve("mistakes");}
+    public MistakeImageService(MistakeImageRepository repository, AccountAccessService accounts, KnowledgeService k,@Value("${forum.knowledge-files:knowledge-files}") String path){this.repository=repository;this.accounts=accounts;this.k=k;directory=Path.of(path).toAbsolutePath().normalize().resolve("mistakes");}
     @Transactional
     public Map<String,Object> upload(Authentication auth,MultipartFile file) throws IOException {
-        k.forum.writable(auth);k.check(!file.isEmpty() && file.getSize()<=5_000_000,"图片须小于 5MB");byte[] bytes=file.getBytes();String ext=null;
+        accounts.writable(auth);k.check(!file.isEmpty() && file.getSize()<=5_000_000,"图片须小于 5MB");byte[] bytes=file.getBytes();String ext=null;
         for(String candidate:List.of("png","jpg","webp")){try{ResourceService.validateFile(candidate,bytes);ext=candidate;break;}catch(ResponseStatusException ignored){}}
         k.check(ext!=null,"仅支持 JPG、PNG、WebP 图片");String stored=UUID.randomUUID()+"."+ext;String mime="image/"+("jpg".equals(ext)?"jpeg":ext);Files.createDirectories(directory);Path target=directory.resolve(stored);Files.write(target,bytes);
         org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization(){@Override public void afterCompletion(int status){if(status!=STATUS_COMMITTED)try{Files.deleteIfExists(target);}catch(IOException ignored){}}});
-        long id=k.insert("INSERT INTO mistake_images(user_id,stored_name,mime_type) VALUES(?,?,?)",k.user(auth),stored,mime);return Map.of("path","/api/mistakes/images/"+id);
+        long id=repository.insertImage(k.user(auth), stored, mime);return Map.of("path","/api/mistakes/images/"+id);
     }
     public ResponseEntity<FileSystemResource> preview(Authentication auth,long imageId) throws IOException {
-        var image=k.required("SELECT * FROM mistake_images WHERE id=? AND user_id=?",imageId,k.forum.id(auth));return bytes(image);
+        var image=k.required(repository.ownedImage(imageId, accounts.id(auth)));return bytes(image);
     }
     public ResponseEntity<FileSystemResource> image(Authentication auth,long id) throws IOException {
-        var mistake=k.mistake(auth,id);String path=Objects.toString(mistake.get("image_path"),"");if(!path.matches("/api/mistakes/images/[0-9]+"))throw new ResponseStatusException(HttpStatus.NOT_FOUND,"图片不存在");long image=Long.parseLong(path.substring(path.lastIndexOf('/')+1));return bytes(k.required("SELECT * FROM mistake_images WHERE id=? AND user_id=?",image,k.n(mistake,"user_id")));
+        var mistake=k.mistake(auth,id);String path=Objects.toString(mistake.get("image_path"),"");if(!path.matches("/api/mistakes/images/[0-9]+"))throw new ResponseStatusException(HttpStatus.NOT_FOUND,"图片不存在");long image=Long.parseLong(path.substring(path.lastIndexOf('/')+1));return bytes(k.required(repository.ownedImage(image, k.n(mistake,"user_id"))));
     }
     private ResponseEntity<FileSystemResource> bytes(Map<String,Object> image) throws IOException {
         Path target=directory.resolve(String.valueOf(image.get("stored_name"))).normalize();if(!target.startsWith(directory) || !Files.isRegularFile(target))throw new ResponseStatusException(HttpStatus.NOT_FOUND,"图片不存在");
