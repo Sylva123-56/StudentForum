@@ -1,12 +1,13 @@
 # 后端重构进度记录
 
 更新日期：2026-11-05  
-代码分支：`codex/rebuild`；2026-11-02 的未提交成果已在本轮验证，按下方记录分阶段提交与推送  
+代码分支：`codex/rebuild`；最新提交为 `5a73798`，已推送，远端 `origin/codex/rebuild` 指向此提交；提交与推送状态见第四节
+
 目标：改善学习与维护体验，逐步形成 Controller → Service → Repository/Mapper → 数据库的分层结构。
 
-> 当前状态：已完成目录迁移、论坛 Controller 的 Mapper 清理、论坛及徽章数据访问下沉、共享权限/积分/通知/徽章拆分、打卡和专注 SQL 下沉，以及学习规则/计划进度/自习室访问能力拆分，并已运行独立 MySQL/HTTP 集成测试；**尚未完成全部后端分层重构**。本记录依据当前源码、已有测试报告和本轮重构执行结果整理，不将编译通过等同于完整业务验证。
+> 当前状态：共享能力、论坛、徽章、学习领域、小组、社交及内容工作流的数据访问迁移，以及错题、图片和 Wiki 的本批 Repository 迁移，均已分阶段提交并推送。`KnowledgeService` 的详情读取、访问检查、审计和通用 SQL 入口，以及资料、合集/专栏等模块仍待整理，**尚未完成全部后端分层重构**。提交前重跑全量测试，181 项全部通过（含 21 项集成测试）。重构工作按用户要求暂停，工作区无未提交的代码改动。
 
-## 一、已完成的部分
+## 一、阶段成果与当前改动
 
 ### 1. 按职责建立包结构
 
@@ -39,16 +40,22 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 
 ### 3. 已下沉的数据库操作
 
-| 模块 | 已完成 | 仍需处理 |
+| 模块 | 当前成果 | 仍需处理 |
 | --- | --- | --- |
 | 论坛 | `ForumService` 的全部 JDBC/SQL 移至 `ForumRepository`；提及与信誉读写移至 `MentionRepository` / `ReputationRepository` | 论坛仍保留旧调用方使用的权限/校验转发方法，后续随调用方迁移删除 |
-| 徽章 | 指标查询、已获徽章查询及去重插入移至 `BadgeRepository` | 其他学习工具 SQL 尚未全部下沉 |
-| 打卡 | 全部 SQL 与查询构造进入 `CheckinRepository`，业务权限/校验留在 `CheckinService` | 保持现有分页、补卡、奖励和访问语义；继续补充并发回归 |
-| 专注 | 全部 SQL 进入 `FocusRepository`，保持统计时间边界和 21 条预取分页 | 学习后台的专注治理 SQL 仍在 `AdminStudyService` |
-| 学习共享能力 | 规则配置、计划进度、自习室访问和科目候选分别移至专用 Service 与领域 Repository | 学习计划剩余 CRUD/模板、自习室 CRUD/消息与后台查询尚未迁完 |
-| 小组检索 | 排行、推荐、筛选查询移至 `GroupRepository` | 小组成员、帖子、文件、打卡等操作仍有 SQL 留在 `GroupService` |
+| 徽章 | 指标查询、已获徽章查询及去重插入移至 `BadgeRepository` | 持续补充奖励与并发去重回归 |
+| 打卡 | 全部 SQL 与查询构造进入 `CheckinRepository`，业务权限/校验留在 `CheckinService` | 继续补充补卡、奖励和并发边界回归 |
+| 专注 | 全部 SQL 进入 `FocusRepository`，保持统计时间边界和 21 条预取分页；后台治理 SQL 已进入 `AdminStudyRepository` | 继续验证并发写入与房间总量联动 |
+| 学习共享能力 | 规则配置、计划进度、自习室访问和科目候选分别移至专用 Service 与领域 Repository | `StudyToolService` 已删除 JDBC 及 `row/requiredRow` 入口，仅保留输入/日期/连续天数工具 |
+| 学习计划、自习室及学习后台 | 计划/任务/模板、房间/成员/消息与后台统计治理分别进入 `StudyPlanRepository`、`StudyRoomRepository`、`AdminStudyRepository` | 继续整理过长业务方法、Map 与含糊命名 |
+| 小组 | 检索、成员、帖子/回复、互动、文件、打卡和治理 SQL 全部进入 `GroupRepository` | `GroupService` 仍有多种业务职责，可按实际需要继续拆分 |
+| 社交 | 关注、动态、通知设置、拉黑、私信与会话 SQL 全部进入 `SocialRepository`；直接依赖权限与内容规则 | 补充更多并发和消息边界回归 |
 | 小组后台管理 | SQL 移至 `GroupAdminRepository`，业务权限及状态校验留在 `GroupAdminService` | 补充更多集成回归和审计行为验证 |
+| 内容工作流 | 拆出投票、草稿、申诉及定时发布 Service，SQL 进入对应 Repository | 继续改善类型与业务方法可读性 |
 | 笔记 | 列表、创建、更新、修订记录和编辑行锁移至 `NoteRepository` | 详情读取及其访问检查仍经 `KnowledgeService.note`，其中仍有 SQL |
+| 错题及图片 | 本批列表、写入、复习、统计、复习计划和图片元数据 SQL 移至 `MistakeRepository`、`MistakeImageRepository` | 错题详情、成员访问检查等仍经 `KnowledgeService` |
+| Wiki | 本批列表、编辑行锁、修订和治理查询移至 `WikiRepository`，显式注入 `AccountAccessService` | 审计及部分校验仍依赖 `KnowledgeService` |
+| 资料、合集/专栏及知识共享服务 | 保留已有 HTTP/Service 分离成果 | `ResourceService`、`CollectionService` 及 `KnowledgeService` 仍有 SQL 和字段穿透访问 |
 
 这里的“下沉”指按业务含义建立 Repository 方法，而不是将 JdbcTemplate 再包装成一个接收任意 SQL 的通用工具。
 
@@ -70,7 +77,9 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 新增小组排行 HTTP 响应及管理员状态请求 JSON 绑定测试。
 - README 已加入包职责、笔记请求调用链以及业务对象与 DTO 的区别说明。
 
-### 6. 2026-11-02 本轮新增
+以下第 6–10 项保留各阶段当时的状态和测试数量；当前整体状态以第三、四节为准。
+
+### 6. 2026-11-02 第一轮成果（历史阶段）
 
 - 新增 `AccountAccessService`，集中身份、可写状态、管理员与版主板块权限。账户、论坛查询、通知、积分、小组、打卡、专注、学习计划、自习室、学习后台及上传模块按明确职责注入，不再为这些权限规则依赖论坛发布服务。
 - 新增 `PointService`、`NotificationService`、`BadgeService` 和 `StudyRewardService`；注册/登录、小组与私信提及、信誉调整及学习激励改为直接调用对应服务。`ForumService` 已移除积分与信誉的旧转发入口。
@@ -81,7 +90,7 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 新增论坛 HTTP 契约、提及隐私与去重、徽章阈值和目录、账户权限、积分流水、Repository 参数与清理顺序、学习激励编排回归。
 - 在现有真实集成测试上新增 CSRF 拒绝、Session 轮换/失效、帖子与回复写入回滚、删帖外层事务回滚/提交、跨用户和版主操作边界用例。
 
-### 7. 2026-11-02 第二轮继续重构
+### 7. 2026-11-02 第二轮成果（历史阶段）
 
 - `CheckinService`、`FocusService` 已不再持有 `JdbcTemplate`、拼接 SQL 或调用 `tools.row/requiredRow`；读写通过具名 `CheckinRepository`、`FocusRepository` 方法完成。
 - `StudySettingsService` / `StudySettingsRepository` 集中规则配置的默认值、读取与白名单更新；后台只提交已校验的配置值，不再拼接更新语句。
@@ -98,7 +107,7 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 自习室 CRUD、成员、消息、排行与学习后台统计/治理分别进入 `StudyRoomRepository`、`AdminStudyRepository`。
 - 删除 `StudyToolService` 的 JDBC 依赖和 `row/requiredRow` 任意 SQL 入口，仅保留输入/日期/连续天数工具。
 - 新增 6 项 Repository 参数与范围回归、1 项真实 HTTP 模板/消息/治理回归；全部 **161 项测试（含 17 项独立数据库集成测试）通过，无跳过**。保留原有路由和安全配置，没有为满足测试开放新权限。
-- 首批历史未提交成果已提交并推送：`95458d2`。学习领域成果独立提交，推送后续以 Git 记录为准。
+- 首批成果为 `95458d2`；本阶段学习领域成果为 `17e2218`，均已有本地推送成功记录。
 
 ### 9. 2026-11-05 小组与社交领域
 
@@ -106,7 +115,7 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 社交关注、动态、通知设置、拉黑、私信与会话 SQL 全部迁入 `SocialRepository`；`SocialService` 改为直接依赖账户权限与内容规则，不再依赖论坛发布服务。
 - 小组与私信新增主键通过 JDBC GeneratedKeyHolder 获取，避免依赖连接池中上一连接的 LAST_INSERT_ID。
 - 新增 5 项查询参数回归和 2 项真实 HTTP 回归；全部 **168 项测试（含 19 项独立数据库集成测试）通过，无跳过**。
-- 学习领域成果 `17e2218` 已提交并推送。
+- 本阶段成果为 `8d28c64`，已有本地推送成功记录。
 
 ### 10. 2026-11-05 内容工作流拆分
 
@@ -114,60 +123,85 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - SQL 进入 `VoteRepository`、`DraftRepository`、`AppealRepository` 和 `ContentRevisionRepository`；权限直接调用 `AccountAccessService`，纯内容校验复用 `ContentRules`。
 - 定时器仅触发 `ScheduledDraftService`，业务服务保留逐草稿事务及失败隔离，SQL 共用 `DraftRepository`。
 - 新增 6 项仓库回归和 2 项真实事务回归，验证增强发布跨服务回滚、投票结果隐私/重复投票、草稿越权、定时发布失败回滚且不中断后续草稿。全部 **176 项测试（含 21 项独立数据库集成测试）通过，无跳过**；定时失败用例中的 WARN 属于预期注入的失败。
-- 小组与社交成果 `8d28c64` 已提交并推送。
+- 本阶段成果已提交为 `a021ef2`，并已推送（远端从 `8d28c64` 更新至 `a021ef2`）。
+
+### 11. 2026-11-05 错题、图片与 Wiki
+
+- 新增 `MistakeRepository`，承接错题筛选、写入、复习记录、行锁、统计及复习计划/任务插入；新增 `MistakeImageRepository`，承接图片元数据与图片归属查询。
+- 新增 `WikiRepository`，承接板块、页面、修订与治理查询；错题、图片、Wiki Service 显式注入 `AccountAccessService`，替换原有直接访问 `k.forum` 的调用。
+- 保留既有私有图片访问策略与事务回滚清理、错题复习行锁、Wiki 板块管理范围、修订冲突 409 和发布可见性。Wiki 审计仍走 `KnowledgeService.audit`，错题详情等仍有共享服务 SQL，不能视为知识领域完整下沉。
+- `KnowledgeService` 新增接收查询结果 Map 的 `required` 重载，保持原有 404 提示和复制返回值语义；原 JDBC、通用 SQL 入口与其他知识模块的调用仍保留。
+- 新增 `KnowledgeRepositoryTest` 的 5 项回归，覆盖有效小组成员筛选、公开搜索参数、错题/Wiki 行锁、图片归属和版主板块范围；同步调整 `KnowledgeServiceTest` 的构造依赖。
+- 最近一次全量报告为 **181 项全部通过，0 失败、0 错误、0 跳过，含 21 项独立数据库集成测试**。本批新增 5 项均为单元测试，集成测试数量未增加。
+- 提交前重跑全量测试通过后，本批代码已提交为 `5a73798` 并推送；`git ls-remote` 确认远端分支指向该提交。
 
 ## 二、尚未完成的部分
 
 | 优先级 | 待办 | 完成标准 |
 | --- | --- | --- |
-| 高 | 继续将其他 Service 中的 SQL 下沉 | 论坛/徽章/打卡/专注已完成；学习计划、自习室和学习后台已完成 SQL 下沉；继续处理小组、社交、内容工作流和知识模块，保持原有参数与返回含义 |
-| 高 | 继续收敛共享 Service 的剩余职责 | 权限、积分、提及、徽章、设置、进度和自习室访问职责已拆出；继续迁移 `ForumService` 旧权限/校验调用方，；`StudyToolService.row/requiredRow` 已删除 |
-| 中 | 继续拆分过大的业务类 | 按内聚职责拆分 `GroupService`、`StudyPlanService`、`ContentWorkflowService` 等；不只是把大 Controller 原样换成大 Service |
-| 中 | 降低共享服务内部耦合 | 减少经 `KnowledgeService` 访问数据库字段或其他服务实例，改为按明确职责注入依赖 |
+| 高 | 完成知识模块剩余 SQL 下沉 | 处理 `ResourceService`、`CollectionService` 及 `KnowledgeService` 中的详情读取、成员查询、审计和通用 SQL 入口；保留权限、参数、错误与返回语义 |
+| 高 | 收敛共享 Service 的剩余职责 | 随调用方迁移移除 `ForumService` 的旧权限/校验转发，降低知识模块对 `KnowledgeService` 字段及其他服务实例的穿透访问；`StudyToolService.row/requiredRow` 已删除 |
+| 中 | 继续拆分过大的业务类 | 优先评估 `GroupService`、`StudyPlanService` 等仍集中的职责；内容工作流已按投票、草稿、申诉、定时发布拆分 |
 | 中 | 渐进替换 Map 与含糊命名 | 优先为稳定的请求、响应和核心业务状态引入类型，逐步减少强制转换、字符串字段名及 `k` 等过短变量名 |
 | 中 | 改善方法内部可读性 | 展开仍压缩成一行的方法，拆分复杂分支与长 SQL，保持错误处理和校验语义，不引入无实际用途的接口或继承体系 |
-| 中 | 扩充业务和 HTTP 回归 | 覆盖管理员/版主/普通用户边界、跨用户内容访问、分页、写入失败、文件清理和定时发布失败场景 |
+| 中 | 补齐验证边界 | 在与部署一致的 MySQL 8 专用实例重跑集成测试；继续补充并发、文件联动与浏览器流程覆盖。定时发布失败回滚和后续草稿继续执行已有集成覆盖 |
 | 低 | 随模块迁移更新学习指南 | 为已完成的典型模块补充阅读顺序，保持文档与真实代码一致 |
 
-SQL 迁移重点包括 `AdminStudyService`、`StudyPlanService`、`StudyRoomService`、`GroupService`、`SocialService`、`ContentWorkflowService` 和 `StudyToolService` 的旧任意 SQL 入口，以及仍通过 `KnowledgeService` 执行数据库操作的知识内容模块。
+学习后台、学习计划、自习室、小组、社交和内容工作流已完成本轮 SQL 下沉，不再列为待迁移领域。当前 SQL 迁移重点为资料、合集/专栏及知识共享服务；错题和 Wiki 已迁出的部分仍有对 `KnowledgeService` 的共享依赖，需后续收敛。Repository 应使用具名业务方法，不新增任意 SQL 包装器。
 
 ## 三、验证记录与边界
 
-### 本轮实际验证
+### 最近一次代码验证（2026-11-05 16:08，提交 `5a73798` 前重跑）
 
-- 使用 Java 21.0.5、Maven，显式启用 `KNOWLEDGE_INTEGRATION=true` 后全量运行 `mvn test`：**154 项，154 项通过，0 失败，0 错误，0 跳过**；其中真实 MySQL/HTTP 集成测试 **16 项**。默认不设置开关时，这 16 项仍按设计跳过。
-- 独立启动仅绑定 `127.0.0.1:13306` 的本机 MySQL，数据目录为 `target/refactor-mysql-data`，上一轮测试库为 `student_forum_knowledge_test_refactor_20261102`，本轮先验证该专用库升级 V15，再用全新专用库 `student_forum_knowledge_test_study_20261102` 完成全量回归；未使用或修改正常业务库。测试结束后关闭该独立实例，保留忽略目录内的测试数据供排查。
-- 验证了旧专用库升级 V15、新专用库从空库执行全部迁移、Spring Bean 装配、真实 HTTP Session/CSRF、用户/版主权限边界、私有知识文件访问、失败写入回滚、删帖外层事务回滚保留文件与提交后清理，以及打卡奖励/跨用户边界、私密自习室与专注记录/后台清理联动、任务汇总/归档/重复完成和可选结束日期。
-- `npm run build`：通过；仍有前端 chunk 大于 500 kB 的现存提示，本轮未修改前端代码或构建策略。
-- `git diff --check`：通过。
-- 旧基线结果为 98 项（89 通过、9 跳过），上一轮为 132 项全通过；以上 154 项是本轮重新执行的结果，不沿用旧报告冒充验证。
+- 提交错题、图片和 Wiki 本批改动前重新执行 `mvn -q test`，退出码 0；汇总 `target/surefire-reports/TEST-*.xml` 得到：**181 项，181 项通过，0 失败，0 错误，0 跳过**，其中 `KnowledgeIntegrationTest` 为 **21 项**。
+- 报告中的运行环境为 Java **21.0.5**，路径 `C:\Program Files\Java\jdk-21`；测试使用 Maven，并启用 `KNOWLEDGE_INTEGRATION=true`。默认不开启此开关时，集成测试按设计跳过。
+- 日志 `target/knowledge-commit-test.log` 为本次运行输出；上一轮日志 `target/knowledge-partial-test.log` 记录测试连接为 `jdbc:mysql://127.0.0.1:3308/student_forum_knowledge_test_refactor`（含创建数据库与编码/时区参数），数据库版本 MySQL **26.7**；本轮独立实例数据目录为 `target/refactor-mysql`。本次测试前该实例已停止，按同一数据目录和 3308 端口重新启动后运行，通过 `KNOWLEDGE_TEST_DB_URL` 指向该专用库。未使用正常业务库；测试实例是否仍在运行以实时进程状态为准。
+- 21 项集成测试覆盖 Session/CSRF、账户与版主权限、私有知识文件、写入回滚、删帖提交后清理、打卡/专注/计划/自习室联动、小组和社交隐私，以及增强发布回滚和定时草稿失败隔离。定时发布失败用例的 WARN/堆栈属于预期失败注入，测试报告无失败。
+- 本次文档修改后运行 `git diff --check`，检查文档格式；未将该检查当作业务测试。
+
+### 历史验证结果
+
+| 阶段 | 测试总数 | 集成测试数 | 记录说明 |
+| --- | --- | --- | --- |
+| 旧基线 | 98 | 未单独记录 | 89 通过、9 跳过 |
+| 前序阶段 | 132 | 未单独记录 | 全部通过 |
+| 共享服务、论坛与打卡/专注 | 154 | 16 | 全部通过、无跳过；提交 `95458d2` |
+| 学习领域 | 161 | 17 | 全部通过、无跳过；提交 `17e2218` |
+| 小组与社交 | 168 | 19 | 全部通过、无跳过；提交 `8d28c64` |
+| 内容工作流 | 176 | 21 | 全部通过、无跳过；提交 `a021ef2` |
+| 错题、图片与 Wiki | 181 | 21 | 全部通过、无跳过；提交 `5a73798` |
+
+- 旧记录中的 `127.0.0.1:13306`、`target/refactor-mysql-data` 与带 `20261102` 后缀的专用库属于前序验证环境，不是最近一次报告的连接信息。旧库升级 V15、空库迁移的结论为前序阶段记录，本次未重新执行。
+- 前序记录中的 `npm run build` 已通过，存在前端 chunk 大于 500 kB 的提示；本轮后续阶段未修改前端，本次未重新执行前端构建。
 
 ### 验证边界
 
-- 本机可用服务器版本为 MySQL 26.7.0；Flyway 提示其高于当前版本已测试的数据库版本范围。虽然迁移和测试已通过，**尚未在 README 要求的 MySQL 8 / 与实际部署一致的版本重跑**，不据此宣称生产兼容性完整验证。
+- 最近报告的 MySQL 26.7 高于当前 Flyway 已测试的版本范围；**尚未在 README 要求的 MySQL 8 / 与实际部署一致的版本重跑**，不据此宣称生产兼容性完整验证。
 - 尚未进行完整浏览器端到端回归；MockMvc 契约测试和真实 HTTP 集成测试不等同于浏览器流程验证。
-- 已验证上述事务路径，但不代表所有业务的并发写入、所有代理边界或其他文件操作与数据库联动都已验证；定时发布失败等场景仍需扩充。
-- 保留现有 URL、JSON 字段和数据库表；历史迁移脚本不改写，仅新增 V15 解决可选结束日期与存储约束不一致。不更换 ORM、不引入新的架构框架。
+- 已覆盖上述事务路径与定时发布失败隔离，但不代表所有并发写入、代理边界或文件与数据库联动均已验证。
+- 本轮保留现有 URL、JSON 字段和数据库表；历史迁移脚本不改写，仅新增 V15 解决可选结束日期与存储约束不一致。不更换 ORM、不引入新的架构框架。
 
 ## 四、提交与推送记录
 
-以下三个历史代码提交已在上一重构阶段推送至 `origin/codex/rebuild`：
+本次推送后执行 `git ls-remote origin refs/heads/codex/rebuild`，远端分支指向 `5a73798`，即下表全部提交均已在远端。
 
-| 提交 | 内容 |
-| --- | --- |
-| `c197118` | 后端 Java 包结构迁移与测试引用更新 |
-| `e7ac4e7` | HTTP/业务职责分离、部分 Repository、业务对象、DTO、测试及阅读指南 |
-| `4ee0879` | 帖子与学习计划规则封装，帖子编辑/删除 Service 与对应测试 |
+| 提交 | 内容 | 提交 / 推送状态 |
+| --- | --- | --- |
+| `c197118` | 后端 Java 包结构迁移与测试引用更新 | 历史记录已推送；属于本地跟踪分支历史 |
+| `e7ac4e7` | HTTP/业务职责分离、部分 Repository、业务对象、DTO、测试及阅读指南 | 历史记录已推送；属于本地跟踪分支历史 |
+| `4ee0879` | 帖子与学习计划规则封装，帖子编辑/删除 Service 与对应测试 | 历史记录已推送；属于本地跟踪分支历史 |
+| `95458d2` | 共享服务、论坛、打卡和专注数据访问拆分 | 已提交；本地 reflog 记录推送成功 |
+| `17e2218` | 学习计划、自习室与学习后台 Repository 边界 | 已提交；本地 reflog 记录推送成功 |
+| `8d28c64` | 小组与社交数据访问隔离 | 已提交；本地 reflog 记录推送成功，当前本地 `origin/codex/rebuild` 指向此提交 |
+| `a021ef2` | 投票、草稿、申诉领域服务及定时发布拆分 | 已提交并推送（`8d28c64..a021ef2`） |
+| `5a73798` | 错题、图片与 Wiki Repository 迁移及 5 项回归测试 | 已提交并推送（`a021ef2..5a73798`），`git ls-remote` 已确认 |
 
-2026-11-05：接续本记录，已使用 JDK 21 重跑全部 154 项测试（含 16 项独立 MySQL/真实 HTTP 集成测试），全部通过、无跳过。测试使用本轮新建的独立实例 `127.0.0.1:3308` 与专用 `knowledge_test` 数据库，未连接业务库；实例版本仍为 MySQL 26.7.0，MySQL 8 兼容性边界保留。先提交现有共享服务、论坛、打卡及专注重构成果，再继续剩余领域。
+本轮用户已明确授权每完成一部分即提交并推送；后续又要求完成当前小任务后暂停。本次已推送 `a021ef2`，重跑测试后提交并推送错题、图片与 Wiki 本批改动，随后按用户要求更新本文档并暂停，未开始下一模块。
 
-本轮用户已明确授权每完成一部分即提交并推送；每批更新本记录，具体提交与推送状态以 Git 为准。
+## 五、恢复工作后的建议顺序
 
-## 五、建议继续顺序
+1. 继续迁移资料、合集/专栏及 `KnowledgeService` 的剩余数据访问和共享职责，减少 `k.db`、`k.forum` 等字段穿透调用。
+2. 在与部署一致的 MySQL 8 专用测试实例上重跑现有 21 项集成测试，保留独立库保护。
+3. 随调用方迁移删除 `ForumService` 的兼容转发，并逐步整理 Map、命名和过长业务方法；每批保留行为回归，验证后提交并推送。
 
-1. 在与部署一致的 MySQL 8 专用测试实例上重跑现有 16 项集成测试，保留现有独立库保护。
-2. 学习计划、自习室和学习后台的 SQL 下沉已完成；后续为小组、社交、内容工作流与知识领域继续迁移，不创建任意 SQL 的新包装器。
-3. 随后迁移小组、社交、内容工作流与知识模块；同时减少 `KnowledgeService` 的字段穿透访问。
-4. 每处理一个领域，同时整理对象、命名和过长方法并补回归；更新本记录，明确未覆盖边界。按本轮用户授权，每完成并验证一个领域即提交并推送。
-
-推荐先读 `ForumController → ForumQueryService → ForumMapper`，再读 `StudyRewardService → PointService / BadgeService → BadgeRepository` 和 `ForumService.hardDeletePost` 的提交后清理。`NoteController → NoteService → NoteRepository` 仍是列表/写入示例；笔记详情仍走 `KnowledgeService`，不要当作已完成迁移的全链路。
+推荐先读 `ForumController → ForumQueryService → ForumMapper`，再读 `StudyRewardService → PointService / BadgeService → BadgeRepository` 和 `ForumService.hardDeletePost` 的提交后清理。`NoteController → NoteService → NoteRepository` 仍是列表/写入示例；笔记和错题详情仍走 `KnowledgeService`，不能视为已完成迁移的全链路。定时任务可读 `DraftPublisher → ScheduledDraftService → DraftRepository`，关注逐草稿事务与失败隔离。
