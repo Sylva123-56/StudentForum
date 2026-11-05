@@ -235,4 +235,25 @@ class KnowledgeIntegrationTest {
   var archived = owner.ok("PATCH", "/plans/" + id + "/tasks/" + child, Map.of("status", "pending"));
   assertEquals("archived", archived.get("status").asText());
  }
+
+ @Test void privateTemplatesAndRoomMessagesKeepTheirHttpContracts() throws Exception {
+  long template = owner.ok("POST", "/plans/templates", Map.of("title", "私有模板回归", "subject", "数学", "visibility", "private", "tasks", List.of("复习概念|第 1 天", "完成练习|第 2 天"))).get("id").asLong();
+  assertEquals(400, other.request("POST", "/plans/templates/" + template + "/apply", null).statusCode());
+  var plan = owner.ok("POST", "/plans/templates/" + template + "/apply", Map.of("startDate", "2026-11-05"));
+  assertEquals(2, plan.get("tasks").size());
+  assertEquals("2026-11-06", plan.get("tasks").get(1).get("due_date").asText());
+  assertTrue(owner.ok("GET", "/plans?status=active&subject=" + java.net.URLEncoder.encode("数学", StandardCharsets.UTF_8), null).get("items").size() > 0);
+  assertEquals(400, owner.request("GET", "/plans?status=invalid", null).statusCode());
+  long room = owner.ok("POST", "/study-rooms", Map.of("name", "消息契约回归", "visibility", "public")).get("id").asLong();
+  other.ok("POST", "/study-rooms/" + room + "/join", null);
+  long message = other.ok("POST", "/study-rooms/" + room + "/messages", Map.of("content", "一起学习")).get("id").asLong();
+  assertEquals(message, new Client().ok("GET", "/study-rooms/" + room, null).get("messages").get(0).get("id").asLong());
+  assertEquals(401, new Client().request("GET", "/study-rooms/" + room + "/messages", null).statusCode());
+  owner.ok("DELETE", "/study-rooms/" + room + "/messages/" + message, null);
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM study_room_messages WHERE id=?", Integer.class, message));
+  assertTrue(admin.ok("GET", "/admin/study-tools/study-rooms?status=active", null).has("summary"));
+  assertTrue(admin.ok("GET", "/admin/study-tools/focus?range=month", null).has("trend"));
+  admin.ok("PATCH", "/admin/study-tools/study-rooms/" + room, Map.of("status", "closed", "muted", true));
+  assertEquals("closed", owner.ok("GET", "/study-rooms/" + room, null).get("status").asText());
+ }
 }

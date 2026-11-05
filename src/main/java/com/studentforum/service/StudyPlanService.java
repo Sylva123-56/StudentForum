@@ -1,5 +1,7 @@
 package com.studentforum.service;
 
+import com.studentforum.repository.StudyPlanRepository;
+
 import com.studentforum.model.StudyPlanPeriod;
 
 import java.time.LocalDate;
@@ -12,7 +14,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class StudyPlanService {
     private static final Set<String> STATUSES = Set.of("active", "completed", "archived");
 
-    private final JdbcTemplate db;
+    private final StudyPlanRepository repository;
     private final AccountAccessService accounts;
     private final StudyToolService tools;
     private final StudyPreferencesService preferences;
@@ -34,8 +35,8 @@ public class StudyPlanService {
     private final StudyRewardService rewards;
     private final StudyPlanProgressService progress;
 
-    public StudyPlanService(JdbcTemplate db, AccountAccessService accounts, StudyToolService tools, StudyPreferencesService preferences, StudySettingsService studySettings, StudyRewardService rewards, StudyPlanProgressService progress) {
-        this.db = db;
+    public StudyPlanService(StudyPlanRepository repository, AccountAccessService accounts, StudyToolService tools, StudyPreferencesService preferences, StudySettingsService studySettings, StudyRewardService rewards, StudyPlanProgressService progress) {
+        this.repository = repository;
         this.accounts = accounts;
         this.tools = tools;
         this.preferences = preferences;
@@ -52,6 +53,11 @@ public class StudyPlanService {
         if (!condition) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
     }
 
+    private Map<String, Object> required(Map<String, Object> row, String message) {
+        if (row == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, message);
+        return row;
+    }
+
     private boolean booleanFlag(Map<String, Object> input, String key) {
         Object value = input.get(key);
         return value instanceof Boolean flag ? flag : "true".equals(String.valueOf(value));
@@ -59,16 +65,16 @@ public class StudyPlanService {
 
     /** 计划归属：读自己的计划要 404 掉别人的，避免越权看到私密计划内容。 */
     private Map<String, Object> plan(long planId, long user) {
-        return tools.requiredRow("SELECT * FROM study_plans WHERE id=? AND user_id=?", "学习计划不存在", planId, user);
+        return required(repository.findOwnedPlan(planId, user), "学习计划不存在");
     }
 
     private Map<String, Object> detail(long planId, long user) {
         Map<String, Object> plan = new LinkedHashMap<>(plan(planId, user));
         plan.put("tasks", progress.planTasks(planId));
         plan.put("progress", progress.progress(planId));
-        plan.put("focusMinutes", tools.rowNumber(tools.row("SELECT COALESCE(SUM(duration_minutes),0) AS minutes FROM focus_sessions WHERE plan_id=?", planId), "minutes"));
+        plan.put("focusMinutes", tools.rowNumber(repository.focusMinutes(planId), "minutes"));
         if (plan.get("group_id") != null) {
-            Map<String, Object> group = tools.row("SELECT name FROM study_groups WHERE id=?", plan.get("group_id"));
+            Map<String, Object> group = repository.groupName(tools.rowNumber(plan, "group_id"));
             plan.put("groupName", group == null ? null : group.get("name"));
         } else {
             plan.put("groupName", null);
@@ -82,21 +88,9 @@ public class StudyPlanService {
                               String status,
                               String subject) {
         long user = id(auth);
-        List<Object> args = new ArrayList<>();
-        args.add(user);
-        StringBuilder sql = new StringBuilder("SELECT p.*,u.username AS owner_username FROM study_plans p JOIN users u ON u.id=p.user_id WHERE p.user_id=?");
-        if (status != null && !status.isBlank() && !"all".equals(status)) {
-            check(STATUSES.contains(status), "计划状态无效");
-            sql.append(" AND p.status=?");
-            args.add(status);
-        }
-        if (subject != null && !subject.isBlank()) {
-            sql.append(" AND p.subject=?");
-            args.add(subject.trim());
-        }
-        sql.append(" ORDER BY p.status='active' DESC,p.end_date IS NULL,p.end_date,p.id DESC LIMIT 100");
+        if (status != null && !status.isBlank() && !"all".equals(status)) check(STATUSES.contains(status), "计划状态无效");
         List<Map<String, Object>> items = new ArrayList<>();
-        for (Map<String, Object> row : db.queryForList(sql.toString(), args.toArray())) {
+        for (Map<String, Object> row : repository.plans(user, status, subject)) {
             Map<String, Object> plan = new LinkedHashMap<>(row);
             plan.put("progress", progress.progress(tools.rowNumber(row, "id")));
             items.add(plan);
@@ -119,11 +113,10 @@ public class StudyPlanService {
         LocalDate end = input.get("endDate") == null ? null : tools.date(input, "endDate", null);
         check(new StudyPlanPeriod(start, end).isValid(), "结束日期不能早于开始日期");
         Long groupId = input.get("groupId") == null ? null : tools.number(input, "groupId", 0);
-        if (groupId != null && groupId > 0) check(tools.row("SELECT 1 FROM study_group_members WHERE group_id=? AND user_id=?", groupId, user) != null, "需要先加入该学习小组");
+        if (groupId != null && groupId > 0) check(repository.groupMembership(groupId, user) != null, "需要先加入该学习小组");
         else groupId = null;
 
-        db.update("INSERT INTO study_plans(user_id,title,subject,goal,start_date,end_date,status,group_id) VALUES(?,?,?,?,?,?,'active',?)", user, title, subject == null ? "" : subject, goal == null ? "" : goal, start, end, groupId);
-        long planId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        long planId = repository.insertPlan(user, title, subject == null ? "" : subject, goal == null ? "" : goal, start, end, groupId);
 
         if (input.get("templateId") != null) {
             long templateId = tools.number(input, "templateId", 0);
@@ -137,7 +130,7 @@ public class StudyPlanService {
                 raw.forEach((key, value) -> task.put(String.valueOf(key), value));
                 String taskTitle = tools.text(task, "title", 1, 100, "任务标题需要 1 到 100 个字");
                 LocalDate due = task.get("dueDate") == null ? null : tools.date(task, "dueDate", null);
-                db.update("INSERT INTO study_tasks(plan_id,title,due_date,status,sort_order) VALUES(?,?,?,'pending',?)", planId, taskTitle, due, order++);
+                repository.insertTask(planId, taskTitle, due, order++);
             }
         }
         return detail(planId, user);
@@ -150,18 +143,18 @@ public class StudyPlanService {
     /** 计划统计：总数、完成率、今日到期、逾期、连续有进展的天数。 */
     private Map<String, Object> stats(long user) {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("total", tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_plans WHERE user_id=? AND status<>'archived'", user), "count"));
-        result.put("active", tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_plans WHERE user_id=? AND status='active'", user), "count"));
-        result.put("completed", tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_plans WHERE user_id=? AND status='completed'", user), "count"));
-        long totalTasks = tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_tasks t JOIN study_plans p ON p.id=t.plan_id WHERE p.user_id=? AND t.parent_id IS NULL", user), "count");
-        long doneTasks = tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_tasks t JOIN study_plans p ON p.id=t.plan_id WHERE p.user_id=? AND t.parent_id IS NULL AND t.status='done'", user), "count");
+        result.put("total", tools.rowNumber(repository.planCount(user), "count"));
+        result.put("active", tools.rowNumber(repository.activePlanCount(user), "count"));
+        result.put("completed", tools.rowNumber(repository.completedPlanCount(user), "count"));
+        long totalTasks = tools.rowNumber(repository.taskCount(user), "count");
+        long doneTasks = tools.rowNumber(repository.doneTaskCount(user), "count");
         result.put("totalTasks", totalTasks);
         result.put("doneTasks", doneTasks);
         result.put("rate", totalTasks == 0 ? 0 : Math.round(doneTasks * 100.0 / totalTasks));
-        result.put("today", tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_tasks t JOIN study_plans p ON p.id=t.plan_id WHERE p.user_id=? AND t.status='pending' AND t.due_date=CURRENT_DATE()", user), "count"));
-        result.put("overdue", tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_tasks t JOIN study_plans p ON p.id=t.plan_id WHERE p.user_id=? AND t.status='pending' AND t.due_date<CURRENT_DATE()", user), "count"));
+        result.put("today", tools.rowNumber(repository.tasksDueToday(user), "count"));
+        result.put("overdue", tools.rowNumber(repository.overdueTasks(user), "count"));
 
-        List<Map<String, Object>> days = db.queryForList("SELECT DATE(t.completed_at) AS date FROM study_tasks t JOIN study_plans p ON p.id=t.plan_id WHERE p.user_id=? AND t.completed_at IS NOT NULL GROUP BY DATE(t.completed_at) ORDER BY date DESC LIMIT 400", user);
+        List<Map<String, Object>> days = repository.completedDays(user);
         List<LocalDate> dates = new ArrayList<>();
         for (Map<String, Object> row : days) {
             LocalDate date = StudyToolService.toDate(row.get("date"));
@@ -191,12 +184,11 @@ public class StudyPlanService {
         Long groupId = plan.get("group_id") == null ? null : tools.rowNumber(plan, "group_id");
         if (input.containsKey("groupId")) {
             groupId = input.get("groupId") == null ? null : tools.number(input, "groupId", 0);
-            if (groupId != null && groupId > 0) check(tools.row("SELECT 1 FROM study_group_members WHERE group_id=? AND user_id=?", groupId, user) != null, "需要先加入该学习小组");
+            if (groupId != null && groupId > 0) check(repository.groupMembership(groupId, user) != null, "需要先加入该学习小组");
             else groupId = null;
         }
 
-        db.update("UPDATE study_plans SET title=?,subject=?,goal=?,start_date=?,end_date=?,status=?,group_id=? WHERE id=?",
-                title, subject == null ? "" : subject, goal == null ? "" : goal, start, end, status, groupId, planId);
+        repository.updatePlan(title, subject == null ? "" : subject, goal == null ? "" : goal, start, end, status, groupId, planId);
         progress.syncPlanStatus(planId);
         return detail(planId, user);
     }
@@ -211,7 +203,7 @@ public class StudyPlanService {
         long user = id(auth);
         plan(planId, user);
         boolean archived = input == null || !input.containsKey("archived") || booleanFlag(input, "archived");
-        db.update("UPDATE study_plans SET status=? WHERE id=?", archived ? "archived" : "active", planId);
+        repository.setPlanStatus(archived ? "archived" : "active", planId);
         if (!archived) progress.syncPlanStatus(planId);
         return detail(planId, user);
     }
@@ -220,7 +212,7 @@ public class StudyPlanService {
         accounts.writable(auth);
         long user = id(auth);
         plan(planId, user);
-        db.update("DELETE FROM study_plans WHERE id=?", planId);
+        repository.deletePlan(planId);
         return Map.of("deleted", true);
     }
 
@@ -235,13 +227,12 @@ public class StudyPlanService {
         LocalDate due = input.get("dueDate") == null ? null : tools.date(input, "dueDate", null);
         Long parentId = input.get("parentId") == null ? null : tools.number(input, "parentId", 0);
         if (parentId != null && parentId > 0) {
-            Map<String, Object> parent = tools.requiredRow("SELECT id,parent_id FROM study_tasks WHERE id=? AND plan_id=?", "父任务不存在", parentId, planId);
+            Map<String, Object> parent = required(repository.findParentTask(parentId, planId), "父任务不存在");
             // 只支持一层子任务：再深一层用户自己也看不懂进度条
             check(parent.get("parent_id") == null, "子任务下不能再建子任务");
         } else parentId = null;
-        long order = tools.rowNumber(tools.row("SELECT COALESCE(MAX(sort_order),-1)+1 AS next FROM study_tasks WHERE plan_id=?", planId), "next");
-        db.update("INSERT INTO study_tasks(plan_id,parent_id,title,due_date,status,sort_order) VALUES(?,?,?,?,'pending',?)", planId, parentId, title, due, order);
-        long taskId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        long order = tools.rowNumber(repository.nextTaskOrder(planId), "next");
+        repository.insertChildTask(planId, parentId, title, due, order);
         if (parentId != null) progress.rollupTask(parentId);
         progress.syncPlanStatus(planId);
         return detail(planId, user);
@@ -257,12 +248,12 @@ public class StudyPlanService {
         long user = id(auth);
         Map<String, Object> before = plan(planId, user);
         String statusBefore = String.valueOf(before.get("status"));
-        Map<String, Object> task = tools.requiredRow("SELECT * FROM study_tasks WHERE id=? AND plan_id=?", "计划任务不存在", taskId, planId);
-        long children = tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM study_tasks WHERE parent_id=?", taskId), "count");
+        Map<String, Object> task = required(repository.findTask(taskId, planId), "计划任务不存在");
+        long children = tools.rowNumber(repository.childCount(taskId), "count");
         if (children > 0) check(!input.containsKey("status"), "该任务包含子任务，请勾选子任务来推进进度");
 
-        if (input.containsKey("title")) db.update("UPDATE study_tasks SET title=? WHERE id=?", tools.text(input, "title", 1, 100, "任务标题需要 1 到 100 个字"), taskId);
-        if (input.containsKey("dueDate")) db.update("UPDATE study_tasks SET due_date=? WHERE id=?", input.get("dueDate") == null ? null : tools.date(input, "dueDate", null), taskId);
+        if (input.containsKey("title")) repository.updateTaskTitle(tools.text(input, "title", 1, 100, "任务标题需要 1 到 100 个字"), taskId);
+        if (input.containsKey("dueDate")) repository.updateTaskDueDate(input.get("dueDate") == null ? null : tools.date(input, "dueDate", null), taskId);
 
         int points = 0;
         List<Map<String, Object>> badges = new ArrayList<>();
@@ -273,7 +264,7 @@ public class StudyPlanService {
             boolean wasDone = "done".equals(task.get("status"));
             boolean nowDone = "done".equals(status);
             if (wasDone != nowDone) {
-                db.update("UPDATE study_tasks SET status=?,completed_at=? WHERE id=?", status, nowDone ? LocalDateTime.now() : null, taskId);
+                repository.updateTaskStatus(status, nowDone ? LocalDateTime.now() : null, taskId);
                 if (nowDone) {
                     Map<String, Object> settings = studySettings.settings();
                     int reward = studySettings.setting(settings, "plan_task_points", 1);
@@ -291,7 +282,7 @@ public class StudyPlanService {
         if (!"completed".equals(statusBefore) && "completed".equals(String.valueOf(plan(planId, user).get("status")))) {
             Map<String, Object> settings = studySettings.settings();
             int bonus = studySettings.setting(settings, "plan_complete_points", 10);
-            boolean already = tools.row("SELECT 1 FROM point_logs WHERE user_id=? AND ref_type='study_plan' AND ref_id=?", user, planId) != null;
+            boolean already = repository.planReward(user, planId) != null;
             if (!already && bonus > 0) {
                 points += bonus;
                 badges.addAll(rewards.award(user, "plan_complete", bonus, "study_plan", planId, 0));
@@ -310,16 +301,15 @@ public class StudyPlanService {
      */
     private Map<String, Object> autoCheckin(long user, Map<String, Object> plan, long taskId) {
         String subject = plan.get("subject") == null ? "" : String.valueOf(plan.get("subject"));
-        Map<String, Object> goal = tools.row("SELECT * FROM checkin_goals WHERE user_id=? AND status='active' AND subject=? ORDER BY id LIMIT 1", user, subject);
-        if (goal == null) goal = tools.row("SELECT * FROM checkin_goals WHERE user_id=? AND status='active' ORDER BY id LIMIT 1", user);
+        Map<String, Object> goal = repository.activeSubjectGoal(user, subject);
+        if (goal == null) goal = repository.firstActiveGoal(user);
         if (goal == null) return null;
         long goalId = tools.rowNumber(goal, "id");
-        long exists = tools.rowNumber(tools.row("SELECT COUNT(*) AS count FROM checkins WHERE goal_id=? AND checkin_date=CURRENT_DATE()", goalId), "count");
+        long exists = tools.rowNumber(repository.todayCheckinCount(goalId), "count");
         if (exists > 0) return null;
         int duration = (int) tools.rowNumber(goal, "target_minutes");
-        db.update("INSERT INTO checkins(user_id,goal_id,content,duration_minutes,subject,visibility,checkin_date,make_up,source,plan_id,task_id) VALUES(?,?,?,?,?,?,CURRENT_DATE(),FALSE,'plan',?,?)",
-                user, goalId, "完成计划任务自动打卡", duration, subject, String.valueOf(goal.get("visibility")), plan.get("id"), taskId);
-        return tools.row("SELECT * FROM checkins WHERE goal_id=? AND checkin_date=CURRENT_DATE()", goalId);
+        repository.insertPlanCheckin(user, goalId, "完成计划任务自动打卡", duration, subject, String.valueOf(goal.get("visibility")), tools.rowNumber(plan, "id"), taskId);
+        return repository.todayCheckin(goalId);
     }
 
     @Transactional
@@ -327,8 +317,8 @@ public class StudyPlanService {
         accounts.writable(auth);
         long user = id(auth);
         plan(planId, user);
-        Map<String, Object> task = tools.requiredRow("SELECT * FROM study_tasks WHERE id=? AND plan_id=?", "计划任务不存在", taskId, planId);
-        db.update("DELETE FROM study_tasks WHERE id=?", taskId);
+        Map<String, Object> task = required(repository.findTask(taskId, planId), "计划任务不存在");
+        repository.deleteTask(taskId);
         if (task.get("parent_id") != null) progress.rollupTask(tools.rowNumber(task, "parent_id"));
         progress.syncPlanStatus(planId);
         return detail(planId, user);
@@ -338,21 +328,12 @@ public class StudyPlanService {
 
     public Map<String, Object> templates(Authentication auth, String subject) {
         long user = id(auth);
-        String filter = subject == null || subject.isBlank() ? "" : " AND subject=?";
-        List<Object> args = subject == null || subject.isBlank() ? List.of() : List.of(subject.trim());
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("official", db.queryForList("SELECT t.*,u.username AS owner_username FROM plan_templates t LEFT JOIN users u ON u.id=t.owner_id WHERE t.owner_id IS NULL" + filter + " ORDER BY t.id", args.toArray()));
-        result.put("mine", db.queryForList("SELECT t.*,u.username AS owner_username FROM plan_templates t LEFT JOIN users u ON u.id=t.owner_id WHERE t.owner_id=?" + filter + " ORDER BY t.id DESC", prepend(user, args)));
-        result.put("shared", db.queryForList("SELECT t.*,u.username AS owner_username FROM plan_templates t JOIN users u ON u.id=t.owner_id WHERE t.owner_id IS NOT NULL AND t.owner_id<>? AND t.visibility='shared'" + filter + " ORDER BY t.use_count DESC,t.id DESC LIMIT 50", prepend(user, args)));
+        result.put("official", repository.officialTemplates(subject));
+        result.put("mine", repository.ownedTemplates(user, subject));
+        result.put("shared", repository.sharedTemplates(user, subject));
         result.put("subjects", preferences.subjects(user));
         return result;
-    }
-
-    private Object[] prepend(long user, List<Object> args) {
-        List<Object> all = new ArrayList<>();
-        all.add(user);
-        all.addAll(args);
-        return all.toArray();
     }
 
     /** 把模板存成我的计划模板，之后可以反复套用。 */
@@ -368,9 +349,8 @@ public class StudyPlanService {
         String tasks = templateTasks(input);
         String visibility = input.get("visibility") == null ? "shared" : String.valueOf(input.get("visibility"));
         check("shared".equals(visibility) || "private".equals(visibility), "模板可见性无效");
-        db.update("INSERT INTO plan_templates(owner_id,title,subject,goal,cycle_days,tasks,visibility) VALUES(?,?,?,?,?,?,?)", user, title, subject == null ? "" : subject, goal == null ? "" : goal, cycle, tasks, visibility);
-        long templateId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
-        return tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
+        long templateId = repository.insertTemplate(user, title, subject == null ? "" : subject, goal == null ? "" : goal, cycle, tasks, visibility);
+        return required(repository.findTemplate(templateId), "模板不存在");
     }
 
     /** 把自己某个计划直接存成模板（用户最常用的入口）。 */
@@ -400,9 +380,8 @@ public class StudyPlanService {
         check(!lines.isEmpty(), "这个计划还没有任务，无法存成模板");
         long ownerId = user;
         String closed = String.join("\n", lines);
-        db.update("INSERT INTO plan_templates(owner_id,title,subject,goal,cycle_days,tasks,visibility) VALUES(?,?,?,?,?,?,?)", ownerId, title, String.valueOf(plan.get("subject")), String.valueOf(plan.get("goal")), cycle, closed, visibility);
-        long templateId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
-        return tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
+        long templateId = repository.insertTemplate(ownerId, title, String.valueOf(plan.get("subject")), String.valueOf(plan.get("goal")), cycle, closed, visibility);
+        return required(repository.findTemplate(templateId), "模板不存在");
     }
 
     /**
@@ -413,7 +392,7 @@ public class StudyPlanService {
     public Map<String, Object> applyTemplateEndpoint(Authentication auth, long templateId, Map<String, Object> input) {
         accounts.writable(auth);
         long user = id(auth);
-        Map<String, Object> template = tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
+        Map<String, Object> template = required(repository.findTemplate(templateId), "模板不存在");
         check(template.get("owner_id") == null || tools.rowNumber(template, "owner_id") == user || "shared".equals(template.get("visibility")), "这个模板没有公开");
         Map<String, Object> body = input == null ? new LinkedHashMap<>() : input;
         String title = body.containsKey("title") ? tools.text(body, "title", 2, 60, "计划标题需要 2 到 60 个字") : String.valueOf(template.get("title"));
@@ -424,28 +403,27 @@ public class StudyPlanService {
         String subject = template.get("subject") == null ? "" : String.valueOf(template.get("subject")).trim();
         String goal = template.get("goal") == null ? "" : String.valueOf(template.get("goal"));
         Long groupId = body.get("groupId") == null ? null : tools.number(body, "groupId", 0);
-        if (groupId != null && groupId > 0) check(tools.row("SELECT 1 FROM study_group_members WHERE group_id=? AND user_id=?", groupId, user) != null, "需要先加入该学习小组");
+        if (groupId != null && groupId > 0) check(repository.groupMembership(groupId, user) != null, "需要先加入该学习小组");
         else groupId = null;
 
-        db.update("INSERT INTO study_plans(user_id,title,subject,goal,start_date,end_date,status,group_id,template_id) VALUES(?,?,?,?,?,?,'active',?,?)", user, title, subject, goal, start, end, groupId, templateId);
-        long planId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        long planId = repository.insertTemplatePlan(user, title, subject, goal, start, end, groupId, templateId);
         applyTemplate(planId, templateId, start, end, user);
-        db.update("UPDATE plan_templates SET use_count=use_count+1 WHERE id=?", templateId);
+        repository.incrementTemplateUse(templateId);
         return detail(planId, user);
     }
 
     public Map<String, Object> deleteTemplate(Authentication auth, long templateId) {
         accounts.writable(auth);
         long user = id(auth);
-        Map<String, Object> template = tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
+        Map<String, Object> template = required(repository.findTemplate(templateId), "模板不存在");
         if (template.get("owner_id") == null || tools.rowNumber(template, "owner_id") != user) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能删除自己的模板");
-        db.update("DELETE FROM plan_templates WHERE id=?", templateId);
+        repository.deleteTemplate(templateId);
         return Map.of("deleted", true);
     }
 
     /** 模板任务文本格式：每行一条，可选 `|第 N 天` 指定相对到期日。 */
     private void applyTemplate(long planId, long templateId, LocalDate start, LocalDate end, long user) {
-        Map<String, Object> template = tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
+        Map<String, Object> template = required(repository.findTemplate(templateId), "模板不存在");
         String block = template.get("tasks") == null ? "" : String.valueOf(template.get("tasks"));
         int order = 0;
         for (String line : block.split("\\r?\\n")) {
@@ -465,7 +443,7 @@ public class StudyPlanService {
             if (value.isEmpty()) continue;
             LocalDate due = day > 0 ? start.plusDays(day - 1L) : null;
             if (due != null && end != null && due.isAfter(end)) due = end;
-            db.update("INSERT INTO study_tasks(plan_id,title,due_date,status,sort_order) VALUES(?,?,?,'pending',?)", planId, value.length() > 100 ? value.substring(0, 100) : value, due, order++);
+            repository.insertTask(planId, value.length() > 100 ? value.substring(0, 100) : value, due, order++);
         }
     }
 

@@ -63,15 +63,15 @@ class StudyToolsTest {
         var accounts = new AccountAccessService(mapper);
         var badges = TestServices.badges(mapper, db);
         var rewards = new StudyRewardService(TestServices.points(mapper, db), badges);
-        tools = new StudyToolService(db);
+        tools = new StudyToolService();
         var studySettings = new StudySettingsService(new StudySettingsRepository(db));
         var roomAccess = new StudyRoomAccessService(new StudyRoomRepository(db));
         var preferences = new StudyPreferencesService(new StudyPreferencesRepository(db));
         var progress = new StudyPlanProgressService(new StudyPlanRepository(db));
         checkin = new CheckinController(new CheckinService(new CheckinRepository(db), accounts, tools, studySettings, rewards, badges));
         focus = new FocusController(new FocusService(new FocusRepository(db), accounts, tools, roomAccess, studySettings, rewards));
-        rooms = new StudyRoomController(new StudyRoomService(db, accounts, tools, preferences, roomAccess, badges));
-        plans = new StudyPlanController(new StudyPlanService(db, accounts, tools, preferences, studySettings, rewards, progress));
+        rooms = new StudyRoomController(new StudyRoomService(new StudyRoomRepository(db), accounts, tools, preferences, roomAccess, badges));
+        plans = new StudyPlanController(new StudyPlanService(new StudyPlanRepository(db), accounts, tools, preferences, studySettings, rewards, progress));
         auth = new UsernamePasswordAuthenticationToken(String.valueOf(ME), null, List.of());
 
         // 默认查询返回空集：只有测试显式桩过的 SQL 才有数据，避免"碰巧通过"
@@ -284,7 +284,7 @@ class StudyToolsTest {
         Map<String, Object> parent = new LinkedHashMap<>(Map.of("id", 9L, "plan_id", 4L, "title", "复习第一章", "status", "pending"));
         when(db.queryForList(argThat(sql -> sql != null && sql.contains("FROM study_plans WHERE id=?")), any(Object[].class))).thenReturn(List.of(plan));
         when(db.queryForList(argThat(sql -> sql != null && sql.contains("FROM study_tasks WHERE id=?")), any(Object[].class))).thenReturn(List.of(parent));
-        // 子任务数量也是通过 tools.row(...) → queryForList 取的
+        // 子任务数量由学习计划 Repository 查询
         when(db.queryForList(argThat(sql -> sql != null && sql.contains("COUNT(*) AS count FROM study_tasks WHERE parent_id=?")), any(Object[].class)))
                 .thenReturn(List.of(Map.of("count", 2L)));
 

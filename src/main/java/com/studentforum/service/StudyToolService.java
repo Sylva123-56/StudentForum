@@ -8,24 +8,16 @@ import java.util.Map;
 import java.util.Set;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 学习工具共用的输入、日期与连续天数工具。
- * row/requiredRow 仅供尚未迁移的学习计划、自习室和后台代码使用；
- * 新增查询应进入对应领域 Repository，不再扩展这个任意 SQL 入口。
  */
 @Service
 public class StudyToolService {
     /** 打卡有意义的时长上下限：0 表示只记"我来打过卡"，不校准时长。 */
     public static final int MAX_MINUTES = 720;
-    private final JdbcTemplate db;
-
-    public StudyToolService(JdbcTemplate db) {
-        this.db = db;
-    }
 
     // ---------- 输入工具 ----------
 
@@ -67,18 +59,8 @@ public class StudyToolService {
         }
     }
 
-    public Map<String, Object> row(String sql, Object... args) {
-        return db.queryForList(sql, args).stream().findFirst().orElse(null);
-    }
-
-    public Map<String, Object> requiredRow(String sql, String message, Object... args) {
-        Map<String, Object> row = row(sql, args);
-        if (row == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, message);
-        return row;
-    }
-
     public long rowNumber(Map<String, Object> row, String key) {
-        // row 可能来自 tools.row(...)：查不到行时它返回 null，这里统一当 0 处理
+        // 可选查询查不到行时统一当 0 处理
         Object value = row == null ? null : row.get(key);
         return value instanceof Number number ? number.longValue() : 0;
     }

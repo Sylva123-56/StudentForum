@@ -92,12 +92,20 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 真实数据库验证发现原有计划接口/前端允许省略结束日期，但旧数据库 `end_date NOT NULL` 导致 500；新增 **V15** 将该列改为可空，保留现有数据，未修改 V1–V14 的历史脚本。
 - 新增配置默认值/更新白名单、打卡查询范围与绑定、专注时间边界和分页、计划进度/归档、房间权限、科目候选等单元回归；新增 3 项真实 HTTP 学习流程回归。
 
+### 8. 2026-11-05 学习领域数据访问迁移
+
+- 计划 CRUD、任务、模板、自动打卡相关 SQL 全部进入具名 `StudyPlanRepository` 方法；动态筛选与模板可见性查询也在 Repository 内构造，Service 保留权限、参数校验和事务编排。
+- 自习室 CRUD、成员、消息、排行与学习后台统计/治理分别进入 `StudyRoomRepository`、`AdminStudyRepository`。
+- 删除 `StudyToolService` 的 JDBC 依赖和 `row/requiredRow` 任意 SQL 入口，仅保留输入/日期/连续天数工具。
+- 新增 6 项 Repository 参数与范围回归、1 项真实 HTTP 模板/消息/治理回归；全部 **161 项测试（含 17 项独立数据库集成测试）通过，无跳过**。保留原有路由和安全配置，没有为满足测试开放新权限。
+- 首批历史未提交成果已提交并推送：`95458d2`。学习领域成果独立提交，推送后续以 Git 记录为准。
+
 ## 二、尚未完成的部分
 
 | 优先级 | 待办 | 完成标准 |
 | --- | --- | --- |
-| 高 | 继续将其他 Service 中的 SQL 下沉 | 论坛/徽章/打卡/专注已完成；继续处理学习计划其余操作、自习室 CRUD/消息、学习后台、小组、社交、内容工作流和知识模块，保持原有参数与返回含义 |
-| 高 | 继续收敛共享 Service 的剩余职责 | 权限、积分、提及、徽章、设置、进度和自习室访问职责已拆出；继续迁移 `ForumService` 旧权限/校验调用方，并在迁完学习计划/自习室/后台后删除 `StudyToolService.row/requiredRow` |
+| 高 | 继续将其他 Service 中的 SQL 下沉 | 论坛/徽章/打卡/专注已完成；学习计划、自习室和学习后台已完成 SQL 下沉；继续处理小组、社交、内容工作流和知识模块，保持原有参数与返回含义 |
+| 高 | 继续收敛共享 Service 的剩余职责 | 权限、积分、提及、徽章、设置、进度和自习室访问职责已拆出；继续迁移 `ForumService` 旧权限/校验调用方，；`StudyToolService.row/requiredRow` 已删除 |
 | 中 | 继续拆分过大的业务类 | 按内聚职责拆分 `GroupService`、`StudyPlanService`、`ContentWorkflowService` 等；不只是把大 Controller 原样换成大 Service |
 | 中 | 降低共享服务内部耦合 | 减少经 `KnowledgeService` 访问数据库字段或其他服务实例，改为按明确职责注入依赖 |
 | 中 | 渐进替换 Map 与含糊命名 | 优先为稳定的请求、响应和核心业务状态引入类型，逐步减少强制转换、字符串字段名及 `k` 等过短变量名 |
@@ -142,7 +150,7 @@ SQL 迁移重点包括 `AdminStudyService`、`StudyPlanService`、`StudyRoomServ
 ## 五、建议继续顺序
 
 1. 在与部署一致的 MySQL 8 专用测试实例上重跑现有 16 项集成测试，保留现有独立库保护。
-2. 下一轮优先把 `StudyPlanService` 的计划/任务/模板 SQL 收入现有 `StudyPlanRepository`，随后迁移自习室 CRUD/消息与 `AdminStudyService`；迁完后三者即移除 `StudyToolService.row/requiredRow`，不创建任意 SQL 的新包装器。
+2. 学习计划、自习室和学习后台的 SQL 下沉已完成；后续为小组、社交、内容工作流与知识领域继续迁移，不创建任意 SQL 的新包装器。
 3. 随后迁移小组、社交、内容工作流与知识模块；同时减少 `KnowledgeService` 的字段穿透访问。
 4. 每处理一个领域，同时整理对象、命名和过长方法并补回归；更新本记录，明确未覆盖边界。按本轮用户授权，每完成并验证一个领域即提交并推送。
 
