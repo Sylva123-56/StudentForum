@@ -256,4 +256,33 @@ class KnowledgeIntegrationTest {
   admin.ok("PATCH", "/admin/study-tools/study-rooms/" + room, Map.of("status", "closed", "muted", true));
   assertEquals("closed", owner.ok("GET", "/study-rooms/" + room, null).get("status").asText());
  }
+
+ @Test void groupMembershipPostsAndCheckinsRemainPrivate() throws Exception {
+  long group = owner.ok("POST", "/groups", Map.of("name", "分层私密小组", "visibility", "private", "joinMode", "invite")).get("group").get("id").asLong();
+  assertEquals(403, other.request("GET", "/groups/" + group, null).statusCode());
+  owner.ok("POST", "/groups/" + group + "/invite", Map.of("userId", otherId));
+  var detail = other.ok("GET", "/groups/" + group, null);
+  assertEquals(2, detail.get("group").get("member_count").asInt());
+  long post = other.ok("POST", "/groups/" + group + "/posts", Map.of("title", "小组重构回归", "content", "验证成员发帖和点赞收藏行为。")).get("id").asLong();
+  assertTrue(owner.ok("POST", "/groups/" + group + "/posts/" + post + "/like", null).get("liked").asBoolean());
+  assertFalse(owner.ok("POST", "/groups/" + group + "/posts/" + post + "/like", null).get("liked").asBoolean());
+  other.ok("POST", "/groups/" + group + "/leave", null);
+  assertEquals(403, other.request("GET", "/groups/" + group + "/posts/" + post, null).statusCode());
+  assertEquals(1, owner.ok("GET", "/groups/" + group, null).get("group").get("member_count").asInt());
+ }
+
+ @Test void messagesKeepPrivacyBlockingAndMembershipBoundaries() throws Exception {
+  Client sender = new Client(), recipient = new Client();
+  long senderId = sender.register("社交发送回归"), recipientId = recipient.register("社交接收回归");
+  assertEquals(400, sender.request("POST", "/conversations", Map.of("userId", recipientId)).statusCode());
+  recipient.ok("POST", "/follows/" + senderId, null);
+  long conversation = sender.ok("POST", "/conversations", Map.of("userId", recipientId)).get("id").asLong();
+  sender.ok("POST", "/conversations/" + conversation + "/messages", Map.of("type", "text", "content", "私信分层回归"));
+  var messages = recipient.ok("GET", "/conversations/" + conversation + "/messages", null);
+  assertEquals("私信分层回归", messages.get(0).get("content").asText());
+  assertTrue(messages.get(0).get("is_read").asBoolean());
+  assertEquals(403, other.request("GET", "/conversations/" + conversation + "/messages", null).statusCode());
+  recipient.ok("POST", "/users/" + senderId + "/block", null);
+  assertEquals(400, sender.request("POST", "/conversations/" + conversation + "/messages", Map.of("type", "text", "content", "被拉黑后不能发送")).statusCode());
+ }
 }
