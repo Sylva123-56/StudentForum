@@ -25,7 +25,11 @@ class V2ContentControllerTest {
     @BeforeEach void setup() {
         db = mock(JdbcTemplate.class);
         mapper = mock(ForumMapper.class);
-        controller = new V2ContentController(new ContentWorkflowService(db, TestServices.forum(mapper, db), TestServices.points(mapper, db), TestServices.notifications(mapper, db), mapper));
+        var accounts = new com.studentforum.service.AccountAccessService(mapper);
+        var votes = new com.studentforum.service.VoteService(new com.studentforum.repository.VoteRepository(db), accounts, mapper);
+        var drafts = new com.studentforum.service.DraftService(new com.studentforum.repository.DraftRepository(db), accounts, mapper);
+        var appeals = new com.studentforum.service.AppealService(new com.studentforum.repository.AppealRepository(db), accounts, TestServices.points(mapper, db), TestServices.notifications(mapper, db), mapper);
+        controller = new V2ContentController(new ContentWorkflowService(new com.studentforum.repository.ContentRevisionRepository(db), TestServices.forum(mapper, db), votes, accounts, mapper), votes, drafts, appeals);
         admin = new UsernamePasswordAuthenticationToken("1", null, List.of());
         when(mapper.user(1)).thenReturn(Map.of("id", 1L, "role", "admin", "status", "active"));
         when(db.update(startsWith("UPDATE appeals SET"), any(), any(), any(), anyLong())).thenReturn(1);

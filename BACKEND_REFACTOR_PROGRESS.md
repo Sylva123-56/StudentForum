@@ -108,6 +108,14 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 新增 5 项查询参数回归和 2 项真实 HTTP 回归；全部 **168 项测试（含 19 项独立数据库集成测试）通过，无跳过**。
 - 学习领域成果 `17e2218` 已提交并推送。
 
+### 10. 2026-11-05 内容工作流拆分
+
+- 原 `ContentWorkflowService` 从 354 行缩至 97 行，仅保留增强发布与修订业务；投票/悬赏、草稿、申诉/信誉分别进入 `VoteService`、`DraftService`、`AppealService`，Controller 直接注入对应职责。
+- SQL 进入 `VoteRepository`、`DraftRepository`、`AppealRepository` 和 `ContentRevisionRepository`；权限直接调用 `AccountAccessService`，纯内容校验复用 `ContentRules`。
+- 定时器仅触发 `ScheduledDraftService`，业务服务保留逐草稿事务及失败隔离，SQL 共用 `DraftRepository`。
+- 新增 6 项仓库回归和 2 项真实事务回归，验证增强发布跨服务回滚、投票结果隐私/重复投票、草稿越权、定时发布失败回滚且不中断后续草稿。全部 **176 项测试（含 21 项独立数据库集成测试）通过，无跳过**；定时失败用例中的 WARN 属于预期注入的失败。
+- 小组与社交成果 `8d28c64` 已提交并推送。
+
 ## 二、尚未完成的部分
 
 | 优先级 | 待办 | 完成标准 |

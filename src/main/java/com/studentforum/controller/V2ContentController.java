@@ -1,6 +1,9 @@
 package com.studentforum.controller;
 
 import com.studentforum.service.ContentWorkflowService;
+import com.studentforum.service.VoteService;
+import com.studentforum.service.DraftService;
+import com.studentforum.service.AppealService;
 import java.util.List;
 import java.util.Map;
 import org.springframework.security.core.Authentication;
@@ -10,9 +13,15 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api")
 public class V2ContentController {
     private final ContentWorkflowService contentWorkflowService;
+    private final VoteService votes;
+    private final DraftService drafts;
+    private final AppealService appeals;
 
-    public V2ContentController(ContentWorkflowService contentWorkflowService) {
+    public V2ContentController(ContentWorkflowService contentWorkflowService, VoteService votes, DraftService drafts, AppealService appeals) {
         this.contentWorkflowService = contentWorkflowService;
+        this.votes = votes;
+        this.drafts = drafts;
+        this.appeals = appeals;
     }
 
     @PostMapping("/posts/enhanced")
@@ -22,52 +31,52 @@ public class V2ContentController {
 
     @PostMapping("/posts/{postId}/vote")
     public void createVote(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
-        contentWorkflowService.createVote(auth,postId,input);
+        votes.createVote(auth,postId,input);
     }
 
     @GetMapping("/posts/{postId}/vote")
     public Map<String, Object> vote(Authentication auth, @PathVariable long postId) {
-        return contentWorkflowService.vote(auth,postId);
+        return votes.vote(auth,postId);
     }
 
     @PostMapping("/posts/{postId}/vote/ballots")
     public void ballot(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
-        contentWorkflowService.ballot(auth,postId,input);
+        votes.ballot(auth,postId,input);
     }
 
     @PostMapping("/posts/{postId}/bounty")
     public void bounty(Authentication auth, @PathVariable long postId, @RequestBody Map<String, Object> input) {
-        contentWorkflowService.bounty(auth,postId,input);
+        votes.bounty(auth,postId,input);
     }
 
     @GetMapping("/posts/{postId}/bounty")
     public Map<String, Object> bounty(@PathVariable long postId) {
-        return contentWorkflowService.bounty(postId);
+        return votes.bounty(postId);
     }
 
     @GetMapping("/me/drafts")
     public List<Map<String, Object>> drafts(Authentication auth) {
-        return contentWorkflowService.drafts(auth);
+        return drafts.drafts(auth);
     }
 
     @GetMapping("/drafts/{draftId}")
     public Map<String, Object> draft(Authentication auth, @PathVariable long draftId) {
-        return contentWorkflowService.draft(auth,draftId);
+        return drafts.draft(auth,draftId);
     }
 
     @PostMapping("/drafts")
     public Map<String, Object> draft(Authentication auth, @RequestBody Map<String, Object> input) {
-        return contentWorkflowService.draft(auth,input);
+        return drafts.draft(auth,input);
     }
 
     @PatchMapping("/drafts/{draftId}")
     public void updateDraft(Authentication auth, @PathVariable long draftId, @RequestBody Map<String, Object> input) {
-        contentWorkflowService.updateDraft(auth,draftId,input);
+        drafts.updateDraft(auth,draftId,input);
     }
 
     @DeleteMapping("/drafts/{draftId}")
     public void deleteDraft(Authentication auth, @PathVariable long draftId) {
-        contentWorkflowService.deleteDraft(auth,draftId);
+        drafts.deleteDraft(auth,draftId);
     }
 
     @GetMapping("/posts/{postId}/revisions")
@@ -92,41 +101,41 @@ public class V2ContentController {
 
     @GetMapping("/me/reputation")
     public Map<String, Object> reputation(Authentication auth) {
-        return contentWorkflowService.reputation(auth);
+        return appeals.reputation(auth);
     }
 
     @GetMapping("/me/appeal-targets")
     public List<Map<String, Object>> appealTargets(Authentication auth) {
-        return contentWorkflowService.appealTargets(auth);
+        return appeals.appealTargets(auth);
     }
 
     @PostMapping("/appeals")
     public void appeal(Authentication auth, @RequestBody Map<String, Object> input) {
-        contentWorkflowService.appeal(auth,input);
+        appeals.appeal(auth,input);
     }
 
     @GetMapping("/me/appeals")
     public List<Map<String, Object>> appeals(Authentication auth) {
-        return contentWorkflowService.appeals(auth);
+        return appeals.appeals(auth);
     }
 
     @GetMapping("/admin/appeals")
     public Map<String, Object> adminAppeals(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
-        return contentWorkflowService.adminAppeals(auth,keyword,page);
+        return appeals.adminAppeals(auth,keyword,page);
     }
 
     @PatchMapping("/admin/appeals/{appealId}")
     public void handleAppeal(Authentication auth, @PathVariable long appealId, @RequestBody Map<String, Object> input) {
-        contentWorkflowService.handleAppeal(auth,appealId,input);
+        appeals.handleAppeal(auth,appealId,input);
     }
 
     @GetMapping("/admin/reputation")
     public Map<String, Object> adminReputation(Authentication auth, @RequestParam(required = false) String keyword, @RequestParam(defaultValue = "1") int page) {
-        return contentWorkflowService.adminReputation(auth,keyword,page);
+        return appeals.adminReputation(auth,keyword,page);
     }
 
     @PatchMapping("/admin/reputation/{userId}")
     public void adjustReputation(Authentication auth, @PathVariable long userId, @RequestBody Map<String, Object> input) {
-        contentWorkflowService.adjustReputation(auth,userId,input);
+        appeals.adjustReputation(auth,userId,input);
     }
 }

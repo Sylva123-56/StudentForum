@@ -285,4 +285,39 @@ class KnowledgeIntegrationTest {
   recipient.ok("POST", "/users/" + senderId + "/block", null);
   assertEquals(400, sender.request("POST", "/conversations/" + conversation + "/messages", Map.of("type", "text", "content", "被拉黑后不能发送")).statusCode());
  }
+
+ @Autowired com.studentforum.service.ScheduledDraftService scheduledDrafts;
+
+ @Test void invalidEnhancedVoteRollsBackThePostAndPriorVoteOptions() throws Exception {
+  String title = "投票事务回滚" + suffix;
+  Map<String, Object> vote = Map.of("closesAt", java.time.LocalDateTime.now().plusDays(1).toString(), "visibility", "after_vote", "options", List.of("有效选项", ""));
+  assertEquals(400, owner.request("POST", "/posts/enhanced", Map.of("boardId", 1, "type", "discussion", "title", title, "content", "验证跨服务事务不能留下半条帖子或选项。", "vote", vote)).statusCode());
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM posts WHERE title=? AND author_id=?", Integer.class, title, ownerId));
+  long post = owner.ok("POST", "/posts/enhanced", Map.of("boardId", 1, "type", "discussion", "title", title, "content", "正确的投票仍然可以发布并由其他人参与。", "vote", Map.of("closesAt", java.time.LocalDateTime.now().plusDays(1).toString(), "visibility", "after_vote", "options", List.of("选项一", "选项二")))).get("id").asLong();
+  var before = other.ok("GET", "/posts/" + post + "/vote", null);
+  assertFalse(before.get("visible").asBoolean());
+  long option = before.get("options").get(0).get("id").asLong();
+  other.ok("POST", "/posts/" + post + "/vote/ballots", Map.of("optionIds", List.of(option)));
+  assertEquals(400, other.request("POST", "/posts/" + post + "/vote/ballots", Map.of("optionIds", List.of(option))).statusCode());
+  var after = other.ok("GET", "/posts/" + post + "/vote", null);
+  assertTrue(after.get("visible").asBoolean());
+  assertEquals(1, after.get("options").get(0).get("ballots").asInt());
+ }
+
+ @Test void scheduledDraftFailureRollsBackAndDoesNotStopTheNextDraft() throws Exception {
+  String failedTitle = "定时失败回归" + suffix, goodTitle = "定时成功回归" + suffix;
+  long failed = owner.ok("POST", "/drafts", Map.of("boardId", 1, "type", "discussion", "title", failedTitle, "content", "无效引用的定时发布必须保留草稿和原定时状态。", "tagIds", "99999999999999")).get("id").asLong();
+  long good = owner.ok("POST", "/drafts", Map.of("boardId", 1, "type", "discussion", "title", goodTitle, "content", "上一条发布失败后这一条仍然应该正常发布。")).get("id").asLong();
+  assertEquals(404, other.request("GET", "/drafts/" + good, null).statusCode());
+  try {
+   db.update("UPDATE drafts SET scheduled_at=DATE_SUB(NOW(),INTERVAL 1 MINUTE) WHERE id IN (?,?)", failed, good);
+   scheduledDrafts.publishDue();
+   assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM drafts WHERE id=? AND scheduled_at IS NOT NULL", Integer.class, failed));
+   assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM posts WHERE author_id=? AND title=?", Integer.class, ownerId, failedTitle));
+   assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM drafts WHERE id=?", Integer.class, good));
+   assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM posts WHERE author_id=? AND title=?", Integer.class, ownerId, goodTitle));
+  } finally {
+   db.update("DELETE FROM drafts WHERE id IN (?,?)", failed, good);
+  }
+ }
 }
