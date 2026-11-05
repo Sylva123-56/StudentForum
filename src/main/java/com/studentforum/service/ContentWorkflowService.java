@@ -19,11 +19,15 @@ import org.springframework.web.server.ResponseStatusException;
 public class ContentWorkflowService {
     private final JdbcTemplate db;
     private final ForumService service;
+    private final PointService points;
+    private final NotificationService notifications;
     private final ForumMapper mapper;
 
-    public ContentWorkflowService(JdbcTemplate db, ForumService service, ForumMapper mapper) {
+    public ContentWorkflowService(JdbcTemplate db, ForumService service, PointService points, NotificationService notifications, ForumMapper mapper) {
         this.db = db;
         this.service = service;
+        this.points = points;
+        this.notifications = notifications;
         this.mapper = mapper;
     }
 
@@ -325,7 +329,7 @@ public class ContentWorkflowService {
         if (restoreAccount)
             db.update("UPDATE users SET status='active' WHERE id=? AND status IN ('muted','banned')", service.number(appeal, "target_id"));
         String message = "申诉已" + (restoreAccount ? "通过，账号已恢复" : "resolved".equals(status) ? "处理" : "驳回") + "：" + note;
-        mapper.notifyUser(service.number(appeal, "user_id"), "appeal", message.substring(0, Math.min(255, message.length())), null);
+        notifications.notifyUser(service.number(appeal, "user_id"), "appeal", message.substring(0, Math.min(255, message.length())), null);
         mapper.adminLog(id(auth), "appeal_" + status, "appeal", appealId, note);
     }
 
@@ -344,7 +348,7 @@ public class ContentWorkflowService {
         long amount = number(input, "amount");
         String reason = text(input, "reason", 255);
         check(amount >= -100 && amount <= 100 && amount != 0 && reason.length() >= 3, "调整范围或理由无效");
-        service.changeReputation(userId, id(auth), (int) amount, reason);
+        points.changeReputation(userId, id(auth), (int) amount, reason);
         mapper.adminLog(id(auth), "reputation", "user", userId, reason);
     }
 }

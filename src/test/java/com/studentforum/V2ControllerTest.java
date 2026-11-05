@@ -25,7 +25,7 @@ class V2ControllerTest {
 
     @BeforeEach void setup() {
         db = mock(JdbcTemplate.class);
-        controller = new V2Controller(new SocialService(db, new ForumService(mock(ForumMapper.class), db), mock(ForumMapper.class)));
+        controller = new V2Controller(new SocialService(db, TestServices.forum(mock(ForumMapper.class), db), TestServices.notifications(mock(ForumMapper.class), db), mock(ForumMapper.class)));
         auth = new UsernamePasswordAuthenticationToken("7", null, List.of());
     }
 

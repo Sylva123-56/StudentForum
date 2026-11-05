@@ -28,18 +28,24 @@ Java 入口是 `src/main/java/com/studentforum/ForumApplication.java`，从这�
 
 | 包 | 职责 | 阅读示例 |
 | --- | --- | --- |
-| `controller` | 声明 HTTP 路径、参数与响应；将请求交给业务类 | `NoteController`、`AdminController` |
-| `service` | 校验输入、执行权限与业务流程；需要原子性的方法标注 `@Transactional` | `NoteService`、`AccountService` |
-| `repository` / `mapper` | 保存查询和数据库读写；前者使用现有 `JdbcTemplate`，后者保留 MyBatis | `NoteRepository`、`ForumMapper` |
+| `controller` | 声明 HTTP 路径、参数与响应；将请求交给业务类 | `ForumController`、`NoteController` |
+| `service` | 校验输入、执行权限与业务流程；需要原子性的方法标注 `@Transactional` | `ForumQueryService`、`AccountAccessService`、`StudyRewardService` |
+| `repository` / `mapper` | 保存查询和数据库读写；前者使用现有 `JdbcTemplate`，后者保留 MyBatis | `ForumRepository`、`BadgeRepository`、`NoteRepository`、`ForumMapper` |
 | `model` | 表达业务概念和规则，而不负责 HTTP 参数绑定 | `ModerationScope`、`Post`、`StudyPlanPeriod`、`SignedInAccount` |
 | `dto` | 表达接口输入或输出，字段应与现有 JSON 契约一致 | `AdminPostStatusRequest` |
 | `config` / `schedule` / `exception` | 安全与序列化配置、定时发布、统一错误响应 | `SecurityConfig`、`DraftPublisher`、`ApiErrors` |
 
 **跟一次请求：** `GET /api/notes` 先到 `NoteController.list` 绑定查询参数，再由 `NoteService.list` 检查访问条件与分页，由 `NoteRepository.search` 执行带参数的 SQL，最后按原有 `items` / `hasNext` 结构返回。写操作可以从 `NoteService.create` 继续追踪：同一事务内创建笔记与修订记录。
 
+**再跟论坛和学习激励：** `GET /api/search` → `ForumController.search` → `ForumQueryService.search` → `ForumMapper.posts`。搜索仍返回原来的数组，查询 21 条为每页 20 条提供下一页判断；通知仍返回 `items` / `hasNext` / `unread`。论坛写操作由 `ForumService` 编排，补充 SQL 在 `ForumRepository`，提及通知在 `NotificationService` / `MentionRepository`，积分和信誉在 `PointService` / `ReputationRepository`。打卡、专注和任务奖励由 `StudyRewardService` 在同一事务内组合积分与 `BadgeService` 的徽章结算；`BadgeRepository` 只负责查询指标和记录已获徽章。
+
+**学习工具的分层：** `POST /api/checkin` → `CheckinService` → `CheckinRepository`，专注记录/统计 → `FocusService` → `FocusRepository`；这两个业务服务不再持有 `JdbcTemplate` 或 SQL。共用规则配置由 `StudySettingsService` / `StudySettingsRepository` 处理，任务进度由 `StudyPlanProgressService` / `StudyPlanRepository` 处理，自习室可见性与总量刷新由 `StudyRoomAccessService` / `StudyRoomRepository` 处理，科目和已加入小组候选由 `StudyPreferencesService` / `StudyPreferencesRepository` 处理。权限、输入校验、响应组装仍留在 Service，Repository 不返回 HTTP 异常。
+
+**事务与文件：** 帖子硬删除先处理数据库，上传文件仅在最外层事务提交后清理；如果事务回滚，仍被帖子引用的文件会保留。真实 MySQL 集成测试包含回滚与提交两条路径，不能只通过检查 `@Transactional` 注解来验证这种行为。
+
 **对象与 DTO 不同：** `ModerationScope` 封装版主可见板块，`Post` 封装作者编辑与采纳规则，`StudyPlanPeriod` 校验计划日期；`AdminPostStatusRequest` 只负责接收 `{ "status": "hidden" }`。不必为每个数据表建立类，也不要为只有一个实现的 Service 强行添加接口。新增功能可先找到同领域 Controller，再沿 Service → Repository/Mapper 查找原有约束与 SQL。
 
-**渐进迁移边界：** 现有接口、字段名、权限与数据库表不变。笔记与小组后台管理模块的 SQL 已集中到 Repository，小组检索 SQL 也已下沉；其他历史模块仍有部分 SQL 与 `Map<String, Object>` 留在 Service，后续应按领域继续收拢，而不是一次性改写全部响应结构。单元测试运行 `mvn test`；需按文末说明配置独立测试数据库，才能运行可选集成测试。
+**渐进迁移边界：** 现有接口、字段名、权限与数据库表不变。`ForumController` 不再访问 Mapper；`ForumService` 和徽章结算不再包含 SQL。笔记列表/写入、小组后台管理与小组检索 SQL 已下沉，笔记详情仍经 `KnowledgeService`。打卡和专注 SQL 已全部下沉，共用设置、进度和自习室访问策略也已拆出；学习计划的其余操作、自习室 CRUD/消息、学习后台，以及小组、社交、扩展内容等历史模块仍有部分 SQL 与 `Map<String, Object>` 留在 Service，后续按领域继续收拢，不一次性改写全部响应结构。权限复用 `AccountAccessService`，不要通过 `ForumService` 获取积分或徽章功能。单元测试运行 `mvn test`；需按文末说明配置独立测试数据库，才能运行可选集成测试。
 
 ## 当前边界
 
@@ -59,7 +65,7 @@ V2 使用 Flyway 的 `V2__social_content.sql` 自动升级现有数据库。私�
 
 ### 数据迁移与文件存储
 
-启动后由 Flyway 自动执行 V9–V14，不需要手工建表。备份后再对正式数据库启动升级。
+启动后由 Flyway 自动执行尚未应用的迁移，不需要手工建表。知识功能包含 V9–V14；新增 V15 将 `study_plans.end_date` 改为可空，使数据库与接口/前端原有的可选结束日期一致，保留已有日期，不改写历史迁移脚本。备份后再对正式数据库启动升级。
 资料和错题图片保存在 `knowledge-files/`，不在公开的 `uploads/` 中；可通过 `KNOWLEDGE_FILE_DIR` 环境变量配置目录。该目录必须与公开静态上传目录分开，部署时同时备份数据库与这个目录。
 资料通过已授权下载接口提供文件；错题图片通过错题可见性校验提供，公开改私有或退出小组后原图片接口即失去访问权。
 
@@ -75,4 +81,4 @@ $env:KNOWLEDGE_TEST_DB_PASSWORD='<测试数据库密码>'
 mvn test
 ```
 
-测试库名称须含 `knowledge_test`；测试会创建独立测试用户与内容，不清空原有业务数据。集成测试文件仅写入 `target/knowledge-test-files`。前端类型检查与打包使用 `npm run build`。
+测试库名称须含 `knowledge_test`，必须是专用库；测试会创建独立测试用户与内容，并包含为兼容迁移构造旧表结构的用例，不能指向业务库。当前 16 项真实集成测试覆盖完整 Spring Bean 装配、真实 HTTP 的 Session/CSRF、用户/版主边界、私有文件访问、失败写入回滚、删帖文件的提交后清理，以及打卡奖励、专注与自习室总量联动、计划任务汇总/归档和可选结束日期。集成测试文件仅写入 `target/knowledge-test-files`。前端类型检查与打包使用 `npm run build`。

@@ -91,4 +91,148 @@ class KnowledgeIntegrationTest {
  @Test void publicGetDoesNotOpenMutationOrPrivateFileEndpoints() throws Exception{
   Client guest=new Client();assertEquals(200,guest.request("GET","/resources",null).statusCode());assertEquals(200,guest.request("GET","/notes",null).statusCode());assertEquals(200,guest.request("GET","/collections",null).statusCode());assertEquals(200,guest.request("GET","/wiki/1",null).statusCode());assertEquals(401,guest.request("GET","/mistakes",null).statusCode());assertEquals(401,guest.request("POST","/notes",Map.of("title","未登录写入","content","不应成功")).statusCode());
  }
+
+ @Autowired com.studentforum.service.ForumService forum;
+ @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+
+ @Test void csrfAndSessionRotationAreEnforcedByTheRealFilterChain() throws Exception {
+  Client client = new Client();
+  long id = client.register("安全边界");
+  CookieManager cookies = (CookieManager) client.http.cookieHandler().orElseThrow();
+  String oldSession = cookies.getCookieStore().getCookies().stream()
+    .filter(cookie -> "JSESSIONID".equals(cookie.getName())).findFirst().orElseThrow().getValue();
+  var noToken = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/me/profile"))
+    .header("Content-Type", "application/json").PUT(HttpRequest.BodyPublishers.ofString("{}")).build();
+  assertEquals(403, client.http.send(noToken, HttpResponse.BodyHandlers.ofString()).statusCode());
+  var badToken = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/me/profile"))
+    .header("Content-Type", "application/json").header("X-XSRF-TOKEN", "invalid")
+    .PUT(HttpRequest.BodyPublishers.ofString("{}")).build();
+  assertEquals(403, client.http.send(badToken, HttpResponse.BodyHandlers.ofString()).statusCode());
+  client.login("安全边界");
+  String newSession = cookies.getCookieStore().getCookies().stream()
+    .filter(cookie -> "JSESSIONID".equals(cookie.getName())).findFirst().orElseThrow().getValue();
+  assertNotEquals(oldSession, newSession);
+  assertEquals(id, client.ok("GET", "/me", null).get("id").asLong());
+  var staleSession = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/me"))
+    .header("Cookie", "JSESSIONID=" + oldSession).GET().build();
+  assertEquals(401, HttpClient.newHttpClient().send(staleSession, HttpResponse.BodyHandlers.ofString()).statusCode());
+  client.ok("POST", "/auth/logout", null);
+  assertEquals(401, client.request("GET", "/me", null).statusCode());
+ }
+
+ @Test void postAndReplyWritesRollBackWhenReferencedContentIsMissing() throws Exception {
+  String title = "事务失败验证" + suffix;
+  var input = new LinkedHashMap<String, Object>(Map.of("boardId", 1, "type", "question",
+    "title", title, "content", "缺失标签或引用时不能留下已经插入的内容。"));
+  input.put("tagIds", List.of(Long.MAX_VALUE));
+  assertEquals(404, owner.request("POST", "/posts", input).statusCode());
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM posts WHERE author_id=? AND title=?", Integer.class, ownerId, title));
+  input.remove("tagIds");
+  long post = owner.ok("POST", "/posts", input).get("id").asLong();
+  int balance = db.queryForObject("SELECT points FROM users WHERE id=?", Integer.class, ownerId);
+  assertEquals(404, owner.request("POST", "/posts/" + post + "/replies",
+    Map.of("content", "无效引用不应保留回复", "quoteReplyId", Long.MAX_VALUE)).statusCode());
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM replies WHERE post_id=?", Integer.class, post));
+  assertEquals(balance, db.queryForObject("SELECT points FROM users WHERE id=?", Integer.class, ownerId));
+ }
+
+ @Test void postUploadsAreDeletedOnlyAfterTheOutermostTransactionCommits() throws Exception {
+  long post = owner.ok("POST", "/posts", Map.of("boardId", 1, "type", "discussion",
+    "title", "删帖文件事务验证", "content", "验证数据库回滚与文件清理顺序，不丢失仍被引用的文件。")).get("id").asLong();
+  String filename = UUID.randomUUID() + ".png";
+  Path file = Path.of("target/knowledge-test-images", filename);
+  Files.createDirectories(file.getParent());
+  Files.write(file, new byte[] {1, 2, 3});
+  db.update("UPDATE posts SET image_path=? WHERE id=?", "/uploads/" + filename, post);
+  var transaction = new org.springframework.transaction.support.TransactionTemplate(transactions);
+  transaction.executeWithoutResult(status -> {
+   forum.hardDeletePost(post);
+   assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM posts WHERE id=?", Integer.class, post));
+   assertTrue(Files.exists(file), "Files must survive until commit");
+   status.setRollbackOnly();
+  });
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM posts WHERE id=?", Integer.class, post));
+  assertTrue(Files.exists(file), "Rollback must preserve referenced uploads");
+  owner.ok("DELETE", "/posts/" + post, null);
+  assertFalse(Files.exists(file), "Committed post deletion must clean the upload");
+ }
+
+ @Test void forumReadsAndReplyDeletionKeepCrossUserAndModeratorBoundaries() throws Exception {
+  long post = owner.ok("POST", "/posts", Map.of("boardId", 1, "type", "question",
+    "title", "论坛访问边界验证", "content", "在真实权限过滤链下验证作者、读者和版主的访问边界。")).get("id").asLong();
+  long reply = other.ok("POST", "/posts/" + post + "/replies", Map.of("content", "这是用于校验权限的回复")).get("id").asLong();
+  assertEquals(403, owner.request("DELETE", "/replies/" + reply, null).statusCode());
+  assertEquals(403, mod.request("DELETE", "/replies/" + reply, null).statusCode());
+  assertEquals(403, owner.request("PATCH", "/admin/posts/" + post + "/status", Map.of("status", "hidden")).statusCode());
+  other.ok("DELETE", "/replies/" + reply, null);
+  assertEquals(0, other.ok("GET", "/posts/" + post + "/replies", null).size());
+  admin.ok("PATCH", "/admin/posts/" + post + "/status", Map.of("status", "hidden"));
+  assertEquals(404, new Client().request("GET", "/posts/" + post, null).statusCode());
+  assertEquals(404, other.request("POST", "/posts/" + post + "/favorite", null).statusCode());
+ }
+
+ @Test void studySettingsAndCheckinsKeepRewardsAndOwnerScope() throws Exception {
+  JsonNode previous = admin.ok("GET", "/admin/study-tools/checkin", null).get("settings");
+  Client student = new Client();
+  long user = student.register("学习打卡");
+  try {
+   assertEquals(403, student.request("PATCH", "/admin/study-tools/checkin/settings", Map.of("checkin_points", 3)).statusCode());
+   admin.ok("PATCH", "/admin/study-tools/checkin/settings", Map.of("checkin_points", 3));
+   long goal = student.ok("POST", "/checkin/goals", Map.of("title", "每日学习打卡", "subject", "数学",
+     "targetMinutes", 25, "visibility", "private")).get("id").asLong();
+   var checkin = student.ok("POST", "/checkin", Map.of("goalId", goal, "content", "完成今日习题", "durationMinutes", 25));
+   assertEquals(3, checkin.get("pointsAwarded").asInt());
+   assertEquals(3, checkin.get("points").asInt());
+   assertEquals(checkin.get("id").asLong(), checkin.get("checkin").get("id").asLong());
+   assertEquals(400, student.request("POST", "/checkin", Map.of("goalId", goal, "content", "重复打卡", "durationMinutes", 25)).statusCode());
+   assertEquals(403, other.request("GET", "/checkin/goals/" + goal, null).statusCode());
+   assertEquals(404, other.request("POST", "/checkin", Map.of("goalId", goal, "content", "他人目标", "durationMinutes", 25)).statusCode());
+   assertEquals(1, student.ok("GET", "/checkin/records?goalId=" + goal, null).get("items").size());
+   assertEquals(3, db.queryForObject("SELECT points FROM point_logs WHERE user_id=? AND action='checkin' AND ref_id=?", Integer.class, user, checkin.get("id").asLong()));
+   assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM user_badges WHERE user_id=? AND code='checkin_first'", Integer.class, user));
+  } finally {
+   admin.ok("PATCH", "/admin/study-tools/checkin/settings", Map.of("checkin_points", previous.get("checkin_points").asInt()));
+  }
+ }
+
+ @Test void focusSessionAndRoomTotalsStayPrivateAndRecalculateOnAdminDeletion() throws Exception {
+  long room = owner.ok("POST", "/study-rooms", Map.of("name", "私密专注验证", "visibility", "private")).get("id").asLong();
+  assertEquals(403, other.request("POST", "/study-rooms/" + room + "/join", null).statusCode());
+  assertEquals(403, other.request("POST", "/focus/sessions", Map.of("roomId", room, "durationMinutes", 25)).statusCode());
+  assertEquals(403, new Client().request("GET", "/study-rooms/" + room, null).statusCode());
+  var session = owner.ok("POST", "/focus/sessions", Map.of("roomId", room, "durationMinutes", 25, "subject", "数学", "source", "room"));
+  assertEquals(25, session.get("duration_minutes").asInt());
+  var details = owner.ok("GET", "/study-rooms/" + room, null);
+  assertEquals(25, details.get("focus_minutes").asInt());
+  assertEquals(1, details.get("member_count").asInt());
+  var history = owner.ok("GET", "/focus/sessions?range=day", null);
+  assertTrue(history.get("items").size() > 0);
+  assertTrue(history.get("summary").get("minutes").asInt() >= 25);
+  assertEquals(200, new Client().request("GET", "/focus/leaderboard", null).statusCode());
+  admin.ok("DELETE", "/admin/study-tools/focus/" + session.get("id").asLong(), null);
+  assertEquals(0, owner.ok("GET", "/study-rooms/" + room, null).get("focus_minutes").asInt());
+ }
+
+ @Test void planTaskRollupPreservesArchiveAndPreventsIdenticalCompletionReward() throws Exception {
+  var plan = owner.ok("POST", "/plans", Map.of("title", "学习进度验证", "subject", "数学", "tasks", List.of(Map.of("title", "父任务"))));
+  long id = plan.get("id").asLong();
+  assertTrue(plan.get("end_date").isNull());
+  long parent = plan.get("tasks").get(0).get("id").asLong();
+  var withChild = owner.ok("POST", "/plans/" + id + "/tasks", Map.of("title", "子任务", "parentId", parent));
+  long child = 0;
+  for (JsonNode task : withChild.get("tasks")) if (!task.get("parent_id").isNull()) child = task.get("id").asLong();
+  assertTrue(child > 0);
+  assertEquals(404, other.request("GET", "/plans/" + id, null).statusCode());
+  assertEquals(400, owner.request("PATCH", "/plans/" + id + "/tasks/" + parent, Map.of("status", "done")).statusCode());
+  var completed = owner.ok("PATCH", "/plans/" + id + "/tasks/" + child, Map.of("status", "done"));
+  assertEquals("completed", completed.get("status").asText());
+  assertEquals(1, completed.get("progress").get("total").asInt());
+  assertEquals(100, completed.get("progress").get("percent").asInt());
+  int awarded = db.queryForObject("SELECT COUNT(*) FROM point_logs WHERE user_id=? AND ref_type='study_task' AND ref_id=?", Integer.class, ownerId, child);
+  owner.ok("PATCH", "/plans/" + id + "/tasks/" + child, Map.of("status", "done"));
+  assertEquals(awarded, db.queryForObject("SELECT COUNT(*) FROM point_logs WHERE user_id=? AND ref_type='study_task' AND ref_id=?", Integer.class, ownerId, child));
+  owner.ok("PATCH", "/plans/" + id + "/archive", Map.of("archived", true));
+  var archived = owner.ok("PATCH", "/plans/" + id + "/tasks/" + child, Map.of("status", "pending"));
+  assertEquals("archived", archived.get("status").asText());
+ }
 }

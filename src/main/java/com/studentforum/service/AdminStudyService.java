@@ -1,5 +1,7 @@
 package com.studentforum.service;
 
+import com.studentforum.repository.StudySettingsRepository;
+
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,17 +33,23 @@ public class AdminStudyService {
             "plan_complete_points", new int[]{0, 500});
 
     private final JdbcTemplate db;
-    private final ForumService service;
+    private final AccountAccessService accounts;
     private final StudyToolService tools;
+    private final StudyRoomAccessService roomAccess;
+    private final StudySettingsService studySettings;
+    private final StudySettingsRepository settingsRepository;
 
-    public AdminStudyService(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public AdminStudyService(JdbcTemplate db, AccountAccessService accounts, StudyToolService tools, StudyRoomAccessService roomAccess, StudySettingsService studySettings, StudySettingsRepository settingsRepository) {
         this.db = db;
-        this.service = service;
+        this.accounts = accounts;
         this.tools = tools;
+        this.roomAccess = roomAccess;
+        this.studySettings = studySettings;
+        this.settingsRepository = settingsRepository;
     }
 
     private long id(Authentication auth) {
-        return service.id(auth);
+        return accounts.id(auth);
     }
 
     private void check(boolean condition, String message) {
@@ -57,8 +65,8 @@ public class AdminStudyService {
     /** 打卡 section：规则配置 + 打卡总览 + 最近打卡明细，一次请求渲染整个后台页。 */
     public Map<String, Object> checkin(Authentication auth) {
         Map<String, Object> result = new LinkedHashMap<>();
-        Map<String, Object> settings = tools.settings();
-        settings.put("allow_makeup", tools.allowMakeup());
+        Map<String, Object> settings = studySettings.settings();
+        settings.put("allow_makeup", studySettings.allowMakeup());
         result.put("settings", settings);
         result.put("today", tools.row("SELECT COUNT(*) AS checkins,COUNT(DISTINCT user_id) AS users,COALESCE(SUM(duration_minutes),0) AS minutes,COALESCE(SUM(points),0) AS points FROM checkins WHERE checkin_date=CURRENT_DATE()"));
         result.put("total", tools.row("SELECT COUNT(*) AS checkins,COUNT(DISTINCT user_id) AS users,COALESCE(SUM(duration_minutes),0) AS minutes,COALESCE(SUM(points),0) AS points FROM checkins"));
@@ -76,29 +84,25 @@ public class AdminStudyService {
     public Map<String, Object> saveSettings(Authentication auth, Map<String, Object> input) {
         long actor = id(auth);
         List<String> changed = new ArrayList<>();
-        List<Object> values = new ArrayList<>();
-        List<String> columns = new ArrayList<>();
+        Map<String, Object> changes = new LinkedHashMap<>();
         for (Map.Entry<String, int[]> entry : NUMBERS.entrySet()) {
             if (!input.containsKey(entry.getKey())) continue;
             long value = tools.number(input, entry.getKey(), entry.getValue()[0]);
             check(value >= entry.getValue()[0] && value <= entry.getValue()[1], entry.getKey() + " 超出允许范围（" + entry.getValue()[0] + "-" + entry.getValue()[1] + "）");
-            columns.add(entry.getKey() + "=?");
-            values.add(value);
+            changes.put(entry.getKey(), value);
             changed.add(entry.getKey());
         }
         if (input.containsKey("allow_makeup")) {
             boolean allow = Boolean.TRUE.equals(input.get("allow_makeup")) || "true".equals(String.valueOf(input.get("allow_makeup")));
-            columns.add("allow_makeup=?");
-            values.add(allow);
+            changes.put("allow_makeup", allow);
             changed.add("allow_makeup");
         }
-        check(!columns.isEmpty(), "没有需要保存的规则");
-        values.add(1L);
-        db.update("UPDATE checkin_settings SET " + String.join(",", columns) + " WHERE id=?", values.toArray());
+        check(!changes.isEmpty(), "没有需要保存的规则");
+        settingsRepository.update(changes);
         log(actor, "update_checkin_settings", "checkin_settings", 1, "修改打卡规则：" + String.join(",", changed));
         Map<String, Object> result = new LinkedHashMap<>();
-        Map<String, Object> settings = tools.settings();
-        settings.put("allow_makeup", tools.allowMakeup());
+        Map<String, Object> settings = studySettings.settings();
+        settings.put("allow_makeup", studySettings.allowMakeup());
         result.put("settings", settings);
         result.put("changed", changed);
         return result;
@@ -132,7 +136,7 @@ public class AdminStudyService {
         Map<String, Object> session = tools.requiredRow("SELECT * FROM focus_sessions WHERE id=?", "专注记录不存在", sessionId);
         db.update("DELETE FROM focus_sessions WHERE id=?", sessionId);
         Long roomId = session.get("room_id") == null ? null : tools.rowNumber(session, "room_id");
-        if (roomId != null) tools.refreshRoomTotals(roomId);
+        if (roomId != null) roomAccess.refreshRoomTotals(roomId);
         log(actor, "delete_focus_session", "focus_session", sessionId, "删除异常专注记录，时长 " + tools.rowNumber(session, "duration_minutes") + " 分钟");
         return Map.of("deleted", true);
     }
@@ -171,7 +175,7 @@ public class AdminStudyService {
             db.update("INSERT INTO study_room_messages(room_id,user_id,kind,content) VALUES(?,?,'system','管理员关闭了该自习室')", roomId, actor);
         }
         log(actor, "update_study_room", "study_room", roomId, "状态 " + room.get("status") + " → " + status + "，静音=" + muted);
-        return tools.room(roomId);
+        return roomAccess.room(roomId);
     }
 
     /** 删除自习室：级联删掉成员与消息，属于不可逆操作，交给超管。 */

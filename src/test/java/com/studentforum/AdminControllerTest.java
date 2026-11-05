@@ -24,7 +24,7 @@ class AdminControllerTest {
 
     @BeforeEach void setup() {
         mapper = mock(ForumMapper.class);
-        controller = new AdminController(new AdminService(mapper, new ForumService(mapper, null)));
+        controller = new AdminController(new AdminService(mapper, TestServices.forum(mapper, null)));
         admin = new UsernamePasswordAuthenticationToken("1", null, List.of());
         when(mapper.user(1)).thenReturn(Map.of("id", 1L, "role", "admin", "status", "active"));
     }

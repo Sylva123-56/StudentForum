@@ -24,7 +24,7 @@ class ForumServiceTest {
 
     @BeforeEach void setup() {
         mapper=mock(ForumMapper.class);
-        service=new ForumService(mapper,mock(JdbcTemplate.class));
+        service=TestServices.forum(mapper,mock(JdbcTemplate.class));
         author=new UsernamePasswordAuthenticationToken("1",null,List.of());
         when(mapper.user(1)).thenReturn(Map.of("id",1L,"status","active","role","student","reputation",100));
     }

@@ -1,6 +1,8 @@
 package com.studentforum.service;
 
+
 import java.time.LocalDate;
+import com.studentforum.repository.CheckinRepository;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -9,7 +11,6 @@ import java.util.Map;
 import java.util.Set;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,24 +18,35 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 学习打卡：创建打卡目标、每日打卡、打卡日历、连续天数、补卡、提醒时间。
- * 积分与徽章的结算集中在 StudyToolService，这里只负责校验和写库。
+ * 积分与徽章的结算集中在 StudyRewardService，这里只负责校验和写库。
  */
 @Service
 public class CheckinService {
     private static final Set<String> FREQUENCIES = Set.of("daily", "weekly");
 
-    private final JdbcTemplate db;
-    private final ForumService service;
+    private final CheckinRepository checkins;
+    private final AccountAccessService accounts;
     private final StudyToolService tools;
+    private final StudySettingsService studySettings;
+    private final BadgeService badges;
+    private final StudyRewardService rewards;
 
-    public CheckinService(JdbcTemplate db, ForumService service, StudyToolService tools) {
-        this.db = db;
-        this.service = service;
+    public CheckinService(CheckinRepository checkins, AccountAccessService accounts, StudyToolService tools, StudySettingsService studySettings, StudyRewardService rewards, BadgeService badges) {
+        this.checkins = checkins;
+        this.accounts = accounts;
         this.tools = tools;
+        this.studySettings = studySettings;
+        this.badges = badges;
+        this.rewards = rewards;
+    }
+
+    private Map<String, Object> required(Map<String, Object> row, String message) {
+        if (row == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, message);
+        return row;
     }
 
     private long id(Authentication auth) {
-        return service.id(auth);
+        return accounts.id(auth);
     }
 
     private Long userOrNull(Authentication auth) {
@@ -54,6 +66,14 @@ public class CheckinService {
         return tools.rowNumber(row, key);
     }
 
+    private List<LocalDate> checkinDates(Long goalId, long userId) {
+        List<Map<String, Object>> rows = goalId == null
+                ? checkins.userDates(userId)
+                : checkins.goalDates(goalId, userId);
+        return rows.stream().map(row -> StudyToolService.toDate(row.get("checkin_date")))
+                .filter(java.util.Objects::nonNull).toList();
+    }
+
     /** 兼容 JSON 布尔与字符串布尔，避免前端传 "false" 被当成 true。 */
     private boolean flag(Object value, boolean fallback) {
         if (value == null) return fallback;
@@ -65,7 +85,7 @@ public class CheckinService {
     // ---------- 设置与统计 ----------
 
     public Map<String, Object> settings() {
-        return tools.settings();
+        return studySettings.settings();
     }
 
     /** 打卡总览：今日打了几个目标、总天数、当前与最长连续天数、专注与积分汇总。 */
@@ -73,16 +93,16 @@ public class CheckinService {
         long user = id(auth);
         LocalDate today = LocalDate.now();
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("today", db.queryForObject("SELECT COUNT(*) FROM checkins WHERE user_id=? AND checkin_date=CURRENT_DATE()", Long.class, user));
-        result.put("total", db.queryForObject("SELECT COUNT(*) FROM checkins WHERE user_id=?", Long.class, user));
-        result.put("days", tools.totalDays(user));
-        result.put("streak", tools.streak(tools.checkinDates(null, user), today));
-        result.put("makeup", db.queryForObject("SELECT COUNT(*) FROM checkins WHERE user_id=? AND make_up=TRUE", Long.class, user));
-        result.put("points", db.queryForObject("SELECT COALESCE(SUM(points),0) FROM checkins WHERE user_id=?", Long.class, user));
-        result.put("minutes", db.queryForObject("SELECT COALESCE(SUM(duration_minutes),0) FROM checkins WHERE user_id=?", Long.class, user));
-        result.put("activeGoals", db.queryForObject("SELECT COUNT(*) FROM checkin_goals WHERE user_id=? AND status='active'", Long.class, user));
+        result.put("today", checkins.todayCount(user));
+        result.put("total", checkins.totalCount(user));
+        result.put("days", checkins.totalDays(user));
+        result.put("streak", tools.streak(checkinDates(null, user), today));
+        result.put("makeup", checkins.makeupCount(user));
+        result.put("points", checkins.totalPoints(user));
+        result.put("minutes", checkins.totalMinutes(user));
+        result.put("activeGoals", checkins.activeGoals(user));
 
-        List<LocalDate> dates = tools.checkinDates(null, user);
+        List<LocalDate> dates = checkinDates(null, user);
         int longest = 0;
         LocalDate previous = null;
         for (int index = dates.size() - 1; index >= 0; index--) {
@@ -95,9 +115,9 @@ public class CheckinService {
             previous = current;
         }
         result.put("longest", longest);
-        result.put("badges", tools.badgeCatalog(user));
+        result.put("badges", badges.badgeCatalog(user));
         // 打卡提醒：今天还没打、且设了提醒时间的活跃目标，前端据此显示"该打卡了"
-        result.put("pending", db.queryForList("SELECT g.id,g.title,g.subject,g.reminder_time FROM checkin_goals g WHERE g.user_id=? AND g.status='active' AND g.reminder_time IS NOT NULL AND NOT EXISTS (SELECT 1 FROM checkins c WHERE c.goal_id=g.id AND c.checkin_date=CURRENT_DATE()) ORDER BY g.reminder_time,g.id", user));
+        result.put("pending", checkins.pendingReminders(user));
         return result;
     }
 
@@ -113,7 +133,7 @@ public class CheckinService {
         LocalDate start = LocalDate.of(targetYear, targetMonth, 1);
         LocalDate end = start.plusDays(start.lengthOfMonth() - 1);
 
-        List<Map<String, Object>> days = db.queryForList("SELECT checkin_date,COUNT(*) AS count,COALESCE(SUM(duration_minutes),0) AS minutes,COALESCE(SUM(points),0) AS points FROM checkins WHERE user_id=? AND checkin_date BETWEEN ? AND ? GROUP BY checkin_date ORDER BY checkin_date", user, start, end);
+        List<Map<String, Object>> days = checkins.calendar(user, start, end);
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, Object> row : days) {
             Map<String, Object> item = new LinkedHashMap<>(row);
@@ -122,7 +142,7 @@ public class CheckinService {
             items.add(item);
         }
 
-        List<LocalDate> dates = tools.checkinDates(null, user);
+        List<LocalDate> dates = checkinDates(null, user);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("year", targetYear);
         result.put("month", targetMonth);
@@ -141,22 +161,12 @@ public class CheckinService {
     public List<Map<String, Object>> goals(Authentication auth, String status) {
         long user = id(auth);
         String filter = Set.of("active", "archived", "all").contains(status) ? status : "active";
-        String clause = switch (filter) {
-            case "archived" -> "AND g.status='archived'";
-            case "all" -> "";
-            default -> "AND g.status='active'";
-        };
-        List<Map<String, Object>> rows = db.queryForList("SELECT g.*,u.username AS owner_username,u.id AS owner_id,"
-                + "(SELECT COUNT(*) FROM checkins c WHERE c.goal_id=g.id) AS checkin_count,"
-                + "(SELECT COUNT(*) FROM checkins c WHERE c.goal_id=g.id AND c.checkin_date=CURRENT_DATE()) AS today_count,"
-                + "(SELECT COALESCE(SUM(c.duration_minutes),0) FROM checkins c WHERE c.goal_id=g.id AND c.checkin_date=CURRENT_DATE()) AS today_minutes,"
-                + "(SELECT MAX(c.checkin_date) FROM checkins c WHERE c.goal_id=g.id) AS last_checkin "
-                + "FROM checkin_goals g JOIN users u ON u.id=g.user_id WHERE g.user_id=? " + clause + " ORDER BY FIELD(g.status,'active','archived'),g.created_at DESC", user);
+        List<Map<String, Object>> rows = checkins.goals(user, filter);
         LocalDate today = LocalDate.now();
         List<Map<String, Object>> goals = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             Map<String, Object> goal = new LinkedHashMap<>(row);
-            goal.put("streak", tools.streak(tools.checkinDates(rowNumber(row, "id"), user), today));
+            goal.put("streak", tools.streak(checkinDates(rowNumber(row, "id"), user), today));
             goal.put("checkedToday", rowNumber(row, "today_count") > 0);
             // 前端据此把"今天还没打卡、且设了提醒时间"的目标排在待办区
             goal.put("pendingReminder", !Boolean.TRUE.equals(goal.get("checkedToday")) && goal.get("reminder_time") != null);
@@ -168,27 +178,12 @@ public class CheckinService {
     /** 学生广场：别人的公开打卡目标，用来互相监督。 */
     public List<Map<String, Object>> publicGoals(Authentication auth, String subject) {
         Long me = userOrNull(auth);
-        StringBuilder sql = new StringBuilder("SELECT g.id,g.title,g.subject,g.frequency,g.target_minutes,g.visibility,g.created_at,u.username AS owner_username,u.id AS owner_id,"
-                + "(SELECT COUNT(*) FROM checkins c WHERE c.goal_id=g.id) AS checkin_count,"
-                + "(SELECT MAX(c.checkin_date) FROM checkins c WHERE c.goal_id=g.id) AS last_checkin "
-                + "FROM checkin_goals g JOIN users u ON u.id=g.user_id WHERE g.status='active' AND u.status='active' AND (g.visibility='public'");
-        List<Object> args = new ArrayList<>();
-        if (me != null) {
-            sql.append(" OR (g.visibility='group' AND g.group_id IN (SELECT group_id FROM study_group_members WHERE user_id=?))");
-            args.add(me);
-        }
-        sql.append(")");
-        if (subject != null && !subject.isBlank()) {
-            sql.append(" AND g.subject=?");
-            args.add(subject.trim());
-        }
-        sql.append(" ORDER BY last_checkin DESC,g.created_at DESC LIMIT 60");
-        List<Map<String, Object>> rows = db.queryForList(sql.toString(), args.toArray());
+        List<Map<String, Object>> rows = checkins.publicGoals(me, subject);
         LocalDate today = LocalDate.now();
         List<Map<String, Object>> goals = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             Map<String, Object> goal = new LinkedHashMap<>(row);
-            goal.put("streak", tools.streak(tools.checkinDates(rowNumber(row, "id"), rowNumber(row, "owner_id")), today));
+            goal.put("streak", tools.streak(checkinDates(rowNumber(row, "id"), rowNumber(row, "owner_id")), today));
             goal.put("mine", me != null && rowNumber(row, "owner_id") == me);
             goals.add(goal);
         }
@@ -201,25 +196,14 @@ public class CheckinService {
                                int page) {
         long user = id(auth);
         int offset = Math.max(0, Math.min(9999, page - 1)) * 20;
-        List<Object> args = new ArrayList<>();
-        StringBuilder sql = new StringBuilder("SELECT c.*,g.title AS goal_title,g.status AS goal_status,u.username,"
-                + "(SELECT COUNT(*) FROM checkins c2 WHERE c2.user_id=c.user_id AND c2.checkin_date=c.checkin_date) AS same_day_count "
-                + "FROM checkins c JOIN checkin_goals g ON g.id=c.goal_id JOIN users u ON u.id=c.user_id WHERE c.user_id=?");
-        args.add(user);
-        if (goalId != null) {
-            sql.append(" AND c.goal_id=?");
-            args.add(goalId);
-        }
-        sql.append(" ORDER BY c.checkin_date DESC,c.id DESC LIMIT 21 OFFSET ?");
-        args.add(offset);
-        List<Map<String, Object>> rows = db.queryForList(sql.toString(), args.toArray());
+        List<Map<String, Object>> rows = checkins.records(user, goalId, offset);
         boolean hasNext = rows.size() > 20;
         return Map.of("items", hasNext ? rows.subList(0, 20) : rows, "hasNext", hasNext, "page", Math.max(1, page));
     }
 
     @Transactional
     public Map<String, Object> createGoal(Authentication auth, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         String title = tools.text(input, "title", 2, 80, "目标名称需要 2 至 80 个字");
         String subject = tools.text(input, "subject", 0, 40, "科目不能超过 40 个字");
@@ -234,9 +218,7 @@ public class CheckinService {
         String reminder = reminder(input.get("reminderTime"));
         boolean allowMakeup = flag(input.get("allowMakeup"), true);
 
-        db.update("INSERT INTO checkin_goals(user_id,title,subject,frequency,target_minutes,visibility,group_id,allow_makeup,reminder_time) VALUES(?,?,?,?,?,?,?,?,?)",
-                user, title, subject, frequency, targetMinutes, visibility, groupId, allowMakeup, reminder);
-        long goalId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        long goalId = checkins.insertGoal(user, title, subject, frequency, targetMinutes, visibility, groupId, allowMakeup, reminder);
         return goal(goalId, auth);
     }
 
@@ -255,8 +237,7 @@ public class CheckinService {
         String reminder = input.containsKey("reminderTime") ? reminder(input.get("reminderTime")) : (old.get("reminder_time") == null ? null : String.valueOf(old.get("reminder_time")));
         boolean allowMakeup = input.containsKey("allowMakeup") ? flag(input.get("allowMakeup"), true) : tools.rowFlag(old, "allow_makeup");
 
-        db.update("UPDATE checkin_goals SET title=?,subject=?,frequency=?,target_minutes=?,visibility=?,group_id=?,allow_makeup=?,reminder_time=? WHERE id=?",
-                title, subject, frequency, targetMinutes, visibility, groupId, allowMakeup, reminder, goalId);
+        checkins.updateGoal(title, subject, frequency, targetMinutes, visibility, groupId, allowMakeup, reminder, goalId);
         return goal(goalId, auth);
     }
 
@@ -264,7 +245,7 @@ public class CheckinService {
         long user = id(auth);
         Map<String, Object> goal = goalForUpdate(goalId, user);
         boolean archive = input == null || !input.containsKey("archived") || Boolean.TRUE.equals(input.get("archived"));
-        db.update("UPDATE checkin_goals SET status=? WHERE id=?", archive ? "archived" : "active", goalId);
+        checkins.setGoalStatus(archive ? "archived" : "active", goalId);
         return goal(goalId, auth);
     }
 
@@ -273,7 +254,7 @@ public class CheckinService {
         long user = id(auth);
         goalForUpdate(goalId, user);
         // checkins 有 ON DELETE CASCADE，历史打卡会跟着目标一起走；积分流水按项目惯例保留
-        db.update("DELETE FROM checkin_goals WHERE id=?", goalId);
+        checkins.deleteGoal(goalId);
     }
 
     // ---------- 打卡 ----------
@@ -281,10 +262,10 @@ public class CheckinService {
     /** 每日打卡。系统代打（番茄钟/计划任务）走 source 与 planId/taskId，并把关联列记下来备查。 */
     @Transactional
     public Map<String, Object> checkin(Authentication auth, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         long goalId = tools.number(input, "goalId", 0);
-        Map<String, Object> goal = tools.requiredRow("SELECT * FROM checkin_goals WHERE id=? AND user_id=?", "打卡目标不存在", goalId, user);
+        Map<String, Object> goal = required(checkins.ownedGoal(goalId, user), "打卡目标不存在");
         check(!"archived".equals(goal.get("status")), "该目标已归档，请先恢复");
 
         LocalDate today = LocalDate.now();
@@ -299,15 +280,15 @@ public class CheckinService {
         if (!date.isAfter(today) && created != null && date.isBefore(created)) check(false, "不能补打卡目标创建之前的日期");
         if (date.isAfter(today)) check(false, "不能给未来的日期打卡");
 
-        long existing = db.queryForObject("SELECT COUNT(*) FROM checkins WHERE goal_id=? AND checkin_date=?", Long.class, goalId, date);
+        long existing = checkins.goalCountOnDate(goalId, date);
         check(existing == 0, "该目标今天已经打过卡了");
 
         boolean makeUp = date.isBefore(today);
         if (makeUp) {
-            check(tools.allowMakeup(), "当前不允许补卡");
+            check(studySettings.allowMakeup(), "当前不允许补卡");
             check(Boolean.TRUE.equals(goal.get("allow_makeup")) || tools.rowFlag(goal, "allow_makeup"), "这个目标没有开启补卡");
             check(ChronoUnit.DAYS.between(date, today) <= 2, "只能补最近 3 天的打卡");
-            long sameDayMakeups = db.queryForObject("SELECT COUNT(*) FROM checkins WHERE user_id=? AND checkin_date=?", Long.class, user, date);
+            long sameDayMakeups = checkins.userCountOnDate(user, date);
             check(sameDayMakeups == 0, "这一天已经有一条补卡记录了");
         }
         int target = (int) rowNumber(goal, "target_minutes");
@@ -317,21 +298,18 @@ public class CheckinService {
         String plan = tools.optionalText(input, "source", 10);
         Long planId = input.get("planId") == null ? null : tools.number(input, "planId", 0);
         Long taskId = input.get("taskId") == null ? null : tools.number(input, "taskId", 0);
-        db.update("INSERT INTO checkins(user_id,goal_id,content,duration_minutes,subject,image_url,visibility,checkin_date,make_up,source,plan_id,task_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                user, goalId, content == null ? "" : content, duration, subject == null ? String.valueOf(goal.getOrDefault("subject", "")) : subject, image,
-                String.valueOf(goal.get("visibility")), date, makeUp, plan == null || plan.isBlank() ? "manual" : plan, planId, taskId);
-        long checkinId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        long checkinId = checkins.insertCheckin(user, goalId, content == null ? "" : content, duration, subject == null ? String.valueOf(goal.getOrDefault("subject", "")) : subject, image, String.valueOf(goal.get("visibility")), date, makeUp, plan == null || plan.isBlank() ? "manual" : plan, planId, taskId);
 
-        List<LocalDate> dates = tools.checkinDates(goalId, user);
+        List<LocalDate> dates = checkinDates(goalId, user);
         int streak = tools.streak(dates, today);
-        Map<String, Object> settings = tools.settings();
-        int points = tools.setting(settings, "checkin_points", 2);
-        int bonusDays = tools.setting(settings, "streak_bonus_days", 7);
-        if (bonusDays > 0 && streak > 0 && streak % bonusDays == 0) points += tools.setting(settings, "streak_bonus", 1);
-        db.update("UPDATE checkins SET points=? WHERE id=?", points, checkinId);
-        List<Map<String, Object>> badges = tools.award(user, "checkin", points, "checkin", checkinId, 0);
+        Map<String, Object> settings = studySettings.settings();
+        int points = studySettings.setting(settings, "checkin_points", 2);
+        int bonusDays = studySettings.setting(settings, "streak_bonus_days", 7);
+        if (bonusDays > 0 && streak > 0 && streak % bonusDays == 0) points += studySettings.setting(settings, "streak_bonus", 1);
+        checkins.setCheckinPoints(points, checkinId);
+        List<Map<String, Object>> badges = rewards.award(user, "checkin", points, "checkin", checkinId, 0);
 
-        Map<String, Object> result = new LinkedHashMap<>(tools.requiredRow("SELECT * FROM checkins WHERE id=?", "打卡记录不存在", checkinId));
+        Map<String, Object> result = new LinkedHashMap<>(required(checkins.checkin(checkinId), "打卡记录不存在"));
         // 这里必须是可容纳 null 的浅拷贝：image_url/plan_id/task_id 为空时 Map.copyOf 会直接抛 NPE
         result.put("checkin", result.get("id") == null ? null : new LinkedHashMap<>(result));
         result.put("streak", streak);
@@ -344,7 +322,7 @@ public class CheckinService {
 
     /** 徽章图鉴：已获得的带 earned/earned_at，未获得的也要返回，前端才能显示"未点亮"的徽章。 */
     public Map<String, Object> badges(Authentication auth) {
-        return Map.of("items", tools.badgeCatalog(id(auth)));
+        return Map.of("items", badges.badgeCatalog(id(auth)));
     }
 
     public Map<String, Object> goalDetail(Authentication auth, long goalId) {
@@ -356,11 +334,11 @@ public class CheckinService {
         long user = id(auth);
         Map<String, Object> goal = goalForUpdate(goalId, user);
         int span = Math.max(7, Math.min(365, days));
-        List<Map<String, Object>> items = db.queryForList("SELECT * FROM checkins WHERE goal_id=? AND checkin_date>=DATE_SUB(CURRENT_DATE(),INTERVAL ? DAY) ORDER BY checkin_date DESC", goalId, span);
+        List<Map<String, Object>> items = checkins.goalRecords(goalId, span);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("goal", goal);
         result.put("items", items);
-        result.put("streak", tools.streak(tools.checkinDates(goalId, user), LocalDate.now()));
+        result.put("streak", tools.streak(checkinDates(goalId, user), LocalDate.now()));
         return result;
     }
 
@@ -368,24 +346,24 @@ public class CheckinService {
 
     private Map<String, Object> goal(long goalId, Authentication auth) {
         long user = id(auth);
-        Map<String, Object> row = db.queryForList("SELECT g.*,(SELECT COUNT(*) FROM checkins c WHERE c.goal_id=g.id) AS checkin_count,(SELECT COUNT(*) FROM checkins c WHERE c.goal_id=g.id AND c.checkin_date=CURRENT_DATE()) AS today_count FROM checkin_goals g WHERE g.id=?", goalId).stream().findFirst().orElse(null);
+        Map<String, Object> row = checkins.goalSummary(goalId);
         if (row == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "打卡目标不存在");
         boolean mine = rowNumber(row, "user_id") == user;
         if (!mine && !"public".equals(row.get("visibility"))) {
             boolean shared = "group".equals(row.get("visibility")) && row.get("group_id") != null
-                    && !db.queryForList("SELECT 1 FROM study_group_members WHERE group_id=? AND user_id=?", rowNumber(row, "group_id"), user).isEmpty();
+                    && checkins.groupMembership(rowNumber(row, "group_id"), user);
             if (!shared) forbidden("这个打卡目标不对外可见");
         }
         Map<String, Object> goal = new LinkedHashMap<>(row);
         goal.put("owned", mine);
-        goal.put("streak", tools.streak(tools.checkinDates(goalId, rowNumber(row, "user_id")), LocalDate.now()));
+        goal.put("streak", tools.streak(checkinDates(goalId, rowNumber(row, "user_id")), LocalDate.now()));
         goal.put("checkedToday", rowNumber(row, "today_count") > 0);
-        goal.put("recent", db.queryForList("SELECT * FROM checkins WHERE goal_id=? ORDER BY checkin_date DESC LIMIT 30", goalId));
+        goal.put("recent", checkins.recent(goalId));
         return goal;
     }
 
     private Map<String, Object> goalForUpdate(long goalId, long userId) {
-        Map<String, Object> row = tools.row("SELECT * FROM checkin_goals WHERE id=?", goalId);
+        Map<String, Object> row = checkins.goal(goalId);
         if (row == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "打卡目标不存在");
         if (rowNumber(row, "user_id") != userId) forbidden("只能修改自己的打卡目标");
         return row;
@@ -399,7 +377,7 @@ public class CheckinService {
         if (!"group".equals(visibility)) return null;
         long groupId = tools.number(input, "groupId", 0);
         if (groupId <= 0) check(false, "请选择要关联的学习小组");
-        long rows = db.queryForObject("SELECT COUNT(*) FROM study_group_members m JOIN study_groups g ON g.id=m.group_id WHERE m.group_id=? AND m.user_id=? AND g.status='active'", Long.class, groupId, userId);
+        long rows = checkins.activeGroupMembership(groupId, userId);
         check(rows > 0, "只能关联自己已加入的学习小组");
         return groupId;
     }

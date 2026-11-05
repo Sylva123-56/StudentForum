@@ -1,5 +1,16 @@
 package com.studentforum;
 
+import com.studentforum.service.StudySettingsService;
+import com.studentforum.service.StudyRoomAccessService;
+import com.studentforum.service.StudyPreferencesService;
+import com.studentforum.service.StudyPlanProgressService;
+import com.studentforum.repository.StudySettingsRepository;
+import com.studentforum.repository.StudyRoomRepository;
+import com.studentforum.repository.StudyPreferencesRepository;
+import com.studentforum.repository.StudyPlanRepository;
+import com.studentforum.repository.CheckinRepository;
+import com.studentforum.repository.FocusRepository;
+
 import com.studentforum.controller.CheckinController;
 import com.studentforum.service.CheckinService;
 import com.studentforum.controller.FocusController;
@@ -9,7 +20,8 @@ import com.studentforum.service.StudyPlanService;
 import com.studentforum.controller.StudyRoomController;
 import com.studentforum.service.StudyRoomService;
 import com.studentforum.mapper.ForumMapper;
-import com.studentforum.service.ForumService;
+import com.studentforum.service.AccountAccessService;
+import com.studentforum.service.StudyRewardService;
 import com.studentforum.service.StudyToolService;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -37,7 +49,6 @@ class StudyToolsTest {
     private static final long ME = 7L;
 
     private JdbcTemplate db;
-    private ForumService service;
     private ForumMapper mapper;
     private StudyToolService tools;
     private CheckinController checkin;
@@ -49,12 +60,18 @@ class StudyToolsTest {
     @BeforeEach void setup() {
         db = mock(JdbcTemplate.class);
         mapper = mock(ForumMapper.class);
-        service = new ForumService(mapper, db);
-        tools = new StudyToolService(db, service, mapper);
-        checkin = new CheckinController(new CheckinService(db, service, tools));
-        focus = new FocusController(new FocusService(db, service, tools));
-        rooms = new StudyRoomController(new StudyRoomService(db, service, tools));
-        plans = new StudyPlanController(new StudyPlanService(db, service, tools));
+        var accounts = new AccountAccessService(mapper);
+        var badges = TestServices.badges(mapper, db);
+        var rewards = new StudyRewardService(TestServices.points(mapper, db), badges);
+        tools = new StudyToolService(db);
+        var studySettings = new StudySettingsService(new StudySettingsRepository(db));
+        var roomAccess = new StudyRoomAccessService(new StudyRoomRepository(db));
+        var preferences = new StudyPreferencesService(new StudyPreferencesRepository(db));
+        var progress = new StudyPlanProgressService(new StudyPlanRepository(db));
+        checkin = new CheckinController(new CheckinService(new CheckinRepository(db), accounts, tools, studySettings, rewards, badges));
+        focus = new FocusController(new FocusService(new FocusRepository(db), accounts, tools, roomAccess, studySettings, rewards));
+        rooms = new StudyRoomController(new StudyRoomService(db, accounts, tools, preferences, roomAccess, badges));
+        plans = new StudyPlanController(new StudyPlanService(db, accounts, tools, preferences, studySettings, rewards, progress));
         auth = new UsernamePasswordAuthenticationToken(String.valueOf(ME), null, List.of());
 
         // 默认查询返回空集：只有测试显式桩过的 SQL 才有数据，避免"碰巧通过"

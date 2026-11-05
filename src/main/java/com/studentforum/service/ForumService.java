@@ -9,13 +9,12 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.studentforum.repository.ForumRepository;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -23,9 +22,19 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ForumService {
     private final ForumMapper mapper;
-    private final JdbcTemplate db;
+    private final ForumRepository repository;
+    private final AccountAccessService accounts;
+    private final PointService points;
+    private final NotificationService notifications;
     private Path directory;
-    public ForumService(ForumMapper mapper,JdbcTemplate db) { this.mapper = mapper; this.db=db; }
+    public ForumService(ForumMapper mapper, ForumRepository repository, AccountAccessService accounts,
+                        PointService points, NotificationService notifications) {
+        this.mapper = mapper;
+        this.repository = repository;
+        this.accounts = accounts;
+        this.points = points;
+        this.notifications = notifications;
+    }
     @Value("${forum.uploads}") public void uploads(String uploadPath) { this.directory = Path.of(uploadPath).toAbsolutePath().normalize(); }
     /**
      * 作者自助删除帖子：真的是从数据库里删掉，而不是把 status 改成 deleted。
@@ -35,21 +44,19 @@ public class ForumService {
      * 举报与申诉记录(reports/appeals) 保留不动。
      */
     @Transactional public void hardDeletePost(long postId) {
-        Map<String,Object> post = db.queryForMap("SELECT image_path,cover_path,attachment_path FROM posts WHERE id=?", postId);
-        // 顺序要紧：reply_revisions 和 mentions 靠 replies 行定位，必须在删 replies 之前执行
-        db.update("DELETE FROM reply_revisions WHERE reply_id IN (SELECT id FROM replies WHERE post_id=?)", postId);
-        db.update("DELETE FROM mentions WHERE (target_type='post' AND target_id=?) OR (target_type='reply' AND target_id IN (SELECT id FROM replies WHERE post_id=?))", postId, postId);
-        db.update("DELETE FROM replies WHERE post_id=?", postId);
-        db.update("DELETE FROM post_tags WHERE post_id=?", postId);
-        db.update("DELETE FROM favorites WHERE post_id=?", postId);
-        mapper.deletePost(postId);
-        db.update("DELETE FROM post_revisions WHERE post_id=?", postId);
-        db.update("DELETE FROM notifications WHERE post_id=?", postId);
-        db.update("DELETE FROM vote_ballots WHERE vote_id IN (SELECT id FROM votes WHERE post_id=?)", postId);
-        db.update("DELETE FROM vote_options WHERE vote_id IN (SELECT id FROM votes WHERE post_id=?)", postId);
-        db.update("DELETE FROM votes WHERE post_id=?", postId);
-        db.update("DELETE FROM bounties WHERE post_id=?", postId);
-        for (String column : List.of("image_path","cover_path","attachment_path")) removeUpload(post.get(column));
+        Map<String, Object> post = repository.uploads(postId);
+        repository.deletePost(postId);
+        // 数据库回滚时必须保留文件，仅在最外层事务提交后清理。
+        Runnable cleanup = () -> {
+            for (String column : List.of("image_path", "cover_path", "attachment_path")) removeUpload(post.get(column));
+        };
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { cleanup.run(); }
+            });
+        } else {
+            cleanup.run();
+        }
     }
     private void removeUpload(Object path) {
         if (path == null || directory == null) return;
@@ -57,24 +64,13 @@ public class ForumService {
         if (!value.matches("/uploads/[0-9a-fA-F-]{36}\\.[A-Za-z0-9]{1,5}")) return;
         try { Files.deleteIfExists(directory.resolve(value.substring("/uploads/".length()))); } catch (IOException ignored) { }
     }
-    public void revision(Authentication auth,long postId,String title,String content) { db.update("INSERT INTO post_revisions(post_id,editor_id,title,content) VALUES(?,?,?,?)",postId,id(auth),title,content); mentions(id(auth),title+" "+content,"post",postId,postId); }
-    public void mentions(long actor,String content,String type,long target,Long postId) {
-        Matcher matcher=Pattern.compile("@([\\p{L}\\p{N}_-]{2,40})").matcher(content);
-        while (matcher.find()) {
-            List<Map<String,Object>> users=db.queryForList("SELECT id,notify_mention FROM users WHERE username=?",matcher.group(1));
-            if (users.isEmpty() || number(users.getFirst(),"id")==actor) continue;
-            long recipient=number(users.getFirst(),"id");
-            if ("message".equals(type) && db.queryForList("SELECT 1 FROM messages m JOIN conversations c ON c.id=m.conversation_id WHERE m.id=? AND (c.user_a_id=? OR c.user_b_id=?)",target,recipient,recipient).isEmpty()) continue;
-            if (db.update("INSERT IGNORE INTO mentions(user_id,actor_id,target_type,target_id) VALUES(?,?,?,?)",recipient,actor,type,target)>0 && Boolean.TRUE.equals(users.getFirst().get("notify_mention"))) mapper.notifyUser(recipient,"mention","有人在"+("message".equals(type)?"私信":"讨论")+"中提及了你",postId);
-        }
+    public void revision(Authentication auth,long postId,String title,String content) {
+        repository.revision(postId, id(auth), title, content);
+        notifications.mentions(id(auth), title + " " + content, "post", postId, postId);
     }
-    public List<Map<String,Object>> sortedReplies(long postId,String sort) {
-        if (!Set.of("earliest","latest","hot").contains(sort)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"回复排序无效");
-        return db.queryForList("SELECT r.*,u.username,u.points AS author_points,u.role AS author_role,mb.name AS author_board_name,q.content AS quote_content FROM replies r JOIN users u ON u.id=r.author_id LEFT JOIN boards mb ON mb.id=u.moderator_board_id LEFT JOIN replies q ON q.id=r.quote_reply_id AND q.status='published' WHERE r.post_id=? AND r.status='published' ORDER BY r.is_accepted DESC,"+("latest".equals(sort)?"r.created_at DESC":"hot".equals(sort)?"u.points DESC,r.created_at DESC":"r.created_at ASC")+" LIMIT 200",postId);
-    }
+
     public long id(Authentication auth) {
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"请先登录");
-        return Long.parseLong(auth.getName());
+        return accounts.id(auth);
     }
     public Map<String,Object> require(Map<String,Object> value) {
         if (value == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND,"内容不存在");
@@ -82,45 +78,31 @@ public class ForumService {
     }
     public long number(Map<String,Object> row,String key) { return ((Number)row.get(key)).longValue(); }
     public boolean flag(Map<String,Object> row,String key) { return Boolean.TRUE.equals(row.get(key)); }
-    public Map<String,Object> current(Authentication auth) { return require(mapper.user(id(auth))); }
+    public Map<String,Object> current(Authentication auth) {
+        return accounts.current(auth);
+    }
     public void writable(Authentication auth) {
-        if (!"active".equals(current(auth).get("status"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"账号暂不能发布内容");
-        if (number(current(auth),"reputation")<40) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"信誉分过低，暂不能发布或私信");
+        accounts.writable(auth);
     }
     public void moderate(Authentication auth,long boardId) {
-        Map<String,Object> user = current(auth);
-        if (!"active".equals(user.get("status"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"账号暂不能管理内容");
-        if ("admin".equals(user.get("role"))) return;
-        if ("moderator".equals(user.get("role")) && user.get("moderator_board_id") != null && number(user,"moderator_board_id") == boardId) return;
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN,"无此板块管理权限");
+        accounts.moderate(auth, boardId);
     }
     public void admin(Authentication auth) {
-        if (!"admin".equals(current(auth).get("role")) || !"active".equals(current(auth).get("status"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"仅管理员可操作");
+        accounts.admin(auth);
     }
     public void staff(Authentication auth) {
-        if (!Set.of("admin","moderator").contains(current(auth).get("role")) || !"active".equals(current(auth).get("status"))) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"仅管理人员可操作");
+        accounts.staff(auth);
     }
     public void text(String value,int min,int max) {
-        if (value == null || value.trim().length() < min || value.length() > max) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"内容长度不符合要求");
-        if (value.toLowerCase().matches("(?s).*(赌博|色情广告|代写论文).*") ) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"内容包含不允许的词语");
+        com.studentforum.model.ContentRules.text(value, min, max);
     }
     public String image(Object value) {
-        if (value == null || "".equals(value)) return null;
-        String path = String.valueOf(value);
-        if (!path.matches("/uploads/[0-9a-fA-F-]{36}\\.(jpg|png|webp)")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"图片路径无效");
-        return path;
+        return com.studentforum.model.ContentRules.image(value);
     }
     public String attachment(Object value) {
-        if (value==null || "".equals(value)) return null;
-        String path=String.valueOf(value);
-        if (!path.matches("/uploads/[0-9a-fA-F-]{36}\\.(pdf|txt|zip)")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"附件路径无效");
-        return path;
+        return com.studentforum.model.ContentRules.attachment(value);
     }
-    @Transactional public void reward(long userId,String action,int amount,String refType,Long refId,int dailyCap) {
-        if (dailyCap > 0 && mapper.dailyPoints(userId,action) >= dailyCap) return;
-        mapper.addPoints(userId,amount);
-        mapper.pointLog(userId,action,amount,mapper.points(userId),refType,refId);
-    }
+
     @Transactional public Map<String,Object> publish(Authentication auth,Map<String,Object> input) {
         writable(auth);
         return createPost(id(auth),input);
@@ -135,15 +117,15 @@ public class ForumService {
         mapper.insertPost(post);
         long postId = ((Number)post.get("id")).longValue();
         String attachment=attachment(input.get("attachmentPath"));
-        if (attachment!=null) db.update("UPDATE posts SET attachment_path=? WHERE id=?",attachment,postId);
+        if (attachment!=null) repository.attachment(postId, attachment);
         String cover=image(input.get("coverPath"));
-        if (cover!=null) db.update("UPDATE posts SET cover_path=? WHERE id=?",cover,postId);
+        if (cover!=null) repository.cover(postId, cover);
         if (input.get("tagIds") instanceof List<?> tags) for (Object tag : tags) {
             long tagId = ((Number)tag).longValue(); require(mapper.tag(tagId)); mapper.postTag(postId,tagId);
         }
-        reward(author,"post",2,"post",postId,5);
-        db.update("INSERT INTO post_revisions(post_id,editor_id,title,content) VALUES(?,?,?,?)",postId,author,title.trim(),content.trim());
-        mentions(author,title+" "+content,"post",postId,postId);
+        points.reward(author,"post",2,"post",postId,5);
+        repository.revision(postId, author, title.trim(), content.trim());
+        notifications.mentions(author,title+" "+content,"post",postId,postId);
         return mapper.post(postId);
     }
     @Transactional public Map<String,Object> reply(Authentication auth,long postId,Map<String,Object> input) {
@@ -159,12 +141,12 @@ public class ForumService {
         if (input.get("quoteReplyId") instanceof Number quoted) {
             Map<String,Object> source=require(mapper.reply(quoted.longValue()));
             if (number(source,"post_id")!=postId || !"published".equals(source.get("status"))) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"引用回复无效");
-            db.update("UPDATE replies SET quote_reply_id=? WHERE id=?",quoted.longValue(),replyId);
+            repository.quote(replyId, quoted.longValue());
         }
-        db.update("INSERT INTO reply_revisions(reply_id,editor_id,content) VALUES(?,?,?)",replyId,id(auth),content.trim());
-        mentions(id(auth),content,"reply",replyId,postId);
-        if (!prior) reward(id(auth),"reply",1,"reply",replyId,5);
-        if (number(post,"author_id") != id(auth)) mapper.notifyUser(number(post,"author_id"),"reply","你的帖子收到了新回复",postId);
+        repository.replyRevision(replyId, id(auth), content.trim());
+        notifications.mentions(id(auth),content,"reply",replyId,postId);
+        if (!prior) points.reward(id(auth),"reply",1,"reply",replyId,5);
+        if (number(post,"author_id") != id(auth)) notifications.notifyUser(number(post,"author_id"),"reply","你的帖子收到了新回复",postId);
         return mapper.reply(replyId);
     }
     @Transactional public void accept(Authentication auth,long postId,long replyId) {
@@ -178,16 +160,15 @@ public class ForumService {
         if (number(reply,"author_id")==id(auth)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"不能采纳自己的回答");
         if (mapper.acceptPost(postId,replyId) == 0) throw new ResponseStatusException(HttpStatus.CONFLICT,"此问题已有最佳答案");
         mapper.acceptReply(replyId);
-        Map<String,Object> bounty=db.queryForList("SELECT amount FROM bounties WHERE post_id=? AND status='open'",postId).stream().findFirst().orElse(null);
+        Map<String,Object> bounty=repository.openBounty(postId);
         if (bounty!=null) {
             int amount=((Number)bounty.get("amount")).intValue();
-            db.update("UPDATE bounties SET status='awarded',recipient_id=? WHERE post_id=?",number(reply,"author_id"),postId);
-            db.update("UPDATE users SET points=points+? WHERE id=?",amount,number(reply,"author_id"));
-            mapper.pointLog(number(reply,"author_id"),"bounty_award",amount,mapper.points(number(reply,"author_id")),"post",postId);
+            repository.awardBounty(postId, number(reply,"author_id"));
+            points.reward(number(reply,"author_id"), "bounty_award", amount, "post", postId, 0);
         }
-        reward(number(reply,"author_id"),"accepted",10,"reply",replyId,0);
-        changeReputation(number(reply,"author_id"),id(auth),2,"回答被采纳");
-        mapper.notifyUser(number(reply,"author_id"),"accepted","你的回答被采纳为最佳答案",postId);
+        points.reward(number(reply,"author_id"),"accepted",10,"reply",replyId,0);
+        points.changeReputation(number(reply,"author_id"),id(auth),2,"回答被采纳");
+        notifications.notifyUser(number(reply,"author_id"),"accepted","你的回答被采纳为最佳答案",postId);
     }
     @Transactional public void report(Authentication auth,Map<String,Object> input) {
         String type = (String)input.get("targetType"), reason = (String)input.get("reason"), description = (String)input.getOrDefault("description","");
@@ -216,8 +197,8 @@ public class ForumService {
         if (mapper.feature(postId,featured)==0) return;
         if (featured) {
             long author=number(post,"author_id");
-            if (mapper.rewardExists(author,"featured","post",postId)==0) { reward(author,"featured",20,"post",postId,0); changeReputation(author,id(auth),2,"帖子加精"); }
-            mapper.notifyUser(author,"featured","你的帖子被设为精华",postId);
+            if (mapper.rewardExists(author,"featured","post",postId)==0) { points.reward(author,"featured",20,"post",postId,0); points.changeReputation(author,id(auth),2,"帖子加精"); }
+            notifications.notifyUser(author,"featured","你的帖子被设为精华",postId);
         }
         mapper.adminLog(id(auth),"feature","post",postId,String.valueOf(featured));
     }
@@ -236,16 +217,15 @@ public class ForumService {
         if (Set.of("hide","delete").contains(action)) {
             if ("post".equals(type)) mapper.postStatus(targetId,"hide".equals(action)?"hidden":"deleted");
             if ("reply".equals(type)) mapper.deleteReply(targetId);
-            if ("message".equals(type)) db.update("UPDATE messages SET content='[已删除]',type='text' WHERE id=?",targetId);
-            if ("resource".equals(type)) db.update("UPDATE resources SET status='rejected' WHERE id=?",targetId);
-        }
-        if (Set.of("mute","ban").contains(action)) {
-            long userId = "user".equals(type)?targetId:"post".equals(type)?number(mapper.post(targetId),"author_id"):"resource".equals(type)?number(require(db.queryForList("SELECT uploader_id FROM resources WHERE id=?",targetId).stream().findFirst().orElse(null)),"uploader_id"):"message".equals(type)?number(db.queryForList("SELECT sender_id FROM messages WHERE id=?",targetId).getFirst(),"sender_id"):number(mapper.reply(targetId),"author_id");
-            mapper.userStatus(userId,"mute".equals(action)?"muted":"banned");
+            if ("message".equals(type)) repository.deleteMessage(targetId);
+            if ("resource".equals(type)) repository.rejectResource(targetId);
         }
         if (!"reject".equals(action)) {
-            long offender="user".equals(type)?targetId:"post".equals(type)?number(mapper.post(targetId),"author_id"):"resource".equals(type)?number(require(db.queryForList("SELECT uploader_id FROM resources WHERE id=?",targetId).stream().findFirst().orElse(null)),"uploader_id"):"message".equals(type)?number(db.queryForList("SELECT sender_id FROM messages WHERE id=?",targetId).getFirst(),"sender_id"):number(mapper.reply(targetId),"author_id");
-            changeReputation(offender,id(auth),"ban".equals(action)?-20:-10,"举报处理 #"+reportId);
+            long offender = reportedUser(type, targetId);
+            if (Set.of("mute", "ban").contains(action)) {
+                mapper.userStatus(offender, "mute".equals(action) ? "muted" : "banned");
+            }
+            points.changeReputation(offender, id(auth), "ban".equals(action) ? -20 : -10, "举报处理 #" + reportId);
         }
         String result = switch (action) {
             case "reject" -> "已驳回";
@@ -256,12 +236,35 @@ public class ForumService {
             default -> throw new IllegalStateException("未知处理方式");
         };
         String message = "你的举报处理结果："+result+(note.isBlank()?"":"。处理备注："+note);
-        mapper.notifyUser(number(report,"reporter_id"),"report",message.length()>255?message.substring(0,255):message,null);
-        if (!"reject".equals(action)) reward(number(report,"reporter_id"),"report_valid",2,"report",reportId,2);
+        notifications.notifyUser(number(report,"reporter_id"),"report",message.length()>255?message.substring(0,255):message,null);
+        if (!"reject".equals(action)) points.reward(number(report,"reporter_id"),"report_valid",2,"report",reportId,2);
         mapper.adminLog(id(auth),"report_"+action,type,targetId,note);
     }
-    public void changeReputation(long user,long actor,int amount,String reason) {
-        db.update("UPDATE users SET reputation=GREATEST(0,LEAST(200,reputation+?)) WHERE id=?",amount,user);
-        db.update("INSERT INTO reputation_logs(user_id,actor_id,amount,balance_after,reason) VALUES(?,?,?,?,?)",user,actor,amount,number(require(mapper.user(user)),"reputation"),reason);
+
+    public void deleteReply(Authentication auth, long id) {
+        Map<String, Object> reply = require(mapper.reply(id));
+        if (((Number) reply.get("author_id")).longValue() != id(auth) || Boolean.TRUE.equals(reply.get("is_accepted")))
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        mapper.deleteReply(id);
+    }
+
+    public void favorite(Authentication auth, long id) {
+        if (!"published".equals(require(mapper.post(id)).get("status")))
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        mapper.favorite(id(auth), id);
+    }
+
+    public void unfavorite(Authentication auth, long id) {
+        mapper.unfavorite(id(auth), id);
+    }
+
+    private long reportedUser(String type, long targetId) {
+        return switch (type) {
+            case "user" -> targetId;
+            case "post" -> number(require(mapper.post(targetId)), "author_id");
+            case "resource" -> number(require(repository.resourceAuthor(targetId)), "uploader_id");
+            case "message" -> number(require(repository.messageAuthor(targetId)), "sender_id");
+            default -> number(require(mapper.reply(targetId)), "author_id");
+        };
     }
 }

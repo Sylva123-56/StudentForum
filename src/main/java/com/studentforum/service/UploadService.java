@@ -17,10 +17,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class UploadService {
     private final Path directory;
-    private final ForumService service;
-    public UploadService(@Value("${forum.uploads}") String path,ForumService service) { this.directory=Path.of(path).toAbsolutePath().normalize(); this.service=service; }
+    private final AccountAccessService accounts;
+    public UploadService(@Value("${forum.uploads}") String path,AccountAccessService accounts) { this.directory=Path.of(path).toAbsolutePath().normalize(); this.accounts=accounts; }
     public Map<String,String> upload(Authentication auth,MultipartFile file) throws IOException {
-        service.writable(auth);
+        accounts.writable(auth);
         if (file.isEmpty() || file.getSize()>5_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"图片不能超过 5MB");
         byte[] bytes=file.getBytes(); String extension;
         if (bytes.length>3 && (bytes[0]&255)==255 && (bytes[1]&255)==216 && (bytes[2]&255)==255) extension="jpg";
@@ -32,7 +32,7 @@ public class UploadService {
         return Map.of("path","/uploads/"+name);
     }
     public Map<String,String> attachment(Authentication auth,MultipartFile file) throws IOException {
-        service.writable(auth);
+        accounts.writable(auth);
         if (file.isEmpty() || file.getSize()>5_000_000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"附件不能超过 5MB");
         String name=String.valueOf(file.getOriginalFilename()).toLowerCase();
         String extension=name.endsWith(".pdf")?"pdf":name.endsWith(".txt")?"txt":name.endsWith(".zip")?"zip":null;

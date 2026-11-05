@@ -18,11 +18,13 @@ import org.springframework.web.server.ResponseStatusException;
 public class SocialService {
     private final JdbcTemplate db;
     private final ForumService service;
+    private final NotificationService notifications;
     private final ForumMapper mapper;
 
-    public SocialService(JdbcTemplate db, ForumService service, ForumMapper mapper) {
+    public SocialService(JdbcTemplate db, ForumService service, NotificationService notifications, ForumMapper mapper) {
         this.db = db;
         this.service = service;
+        this.notifications = notifications;
         this.mapper = mapper;
     }
 
@@ -61,14 +63,14 @@ public class SocialService {
         check(me != userId, "不能关注自己");
         service.require(mapper.publicUser(userId));
         if (db.update("INSERT IGNORE INTO follows(follower_id,followee_id) VALUES(?,?)", me, userId) > 0)
-            mapper.notifyUser(userId, "follow", "有人关注了你", null);
+            notifications.notifyUser(userId, "follow", "有人关注了你", null);
     }
 
     @Transactional
     public void unfollow(Authentication auth, long userId) {
         long me = id(auth);
         if (db.update("DELETE FROM follows WHERE follower_id=? AND followee_id=?", me, userId) > 0 && Boolean.TRUE.equals(required("SELECT notify_unfollow FROM users WHERE id=?", userId).get("notify_unfollow")))
-            mapper.notifyUser(userId, "unfollow", "有人取消关注了你", null);
+            notifications.notifyUser(userId, "unfollow", "有人取消关注了你", null);
     }
 
     public List<Map<String, Object>> following(Authentication auth) {
@@ -193,7 +195,7 @@ public class SocialService {
         db.update("INSERT INTO messages(conversation_id,sender_id,content,type) VALUES(?,?,?,?)", conversationId, id(auth), content, type);
         db.update("UPDATE conversations SET updated_at=NOW() WHERE id=?", conversationId);
         if ("text".equals(type))
-            service.mentions(id(auth), content, "message", db.queryForObject("SELECT LAST_INSERT_ID()", Long.class), null);
+            notifications.mentions(id(auth), content, "message", db.queryForObject("SELECT LAST_INSERT_ID()", Long.class), null);
     }
 
     public void mute(Authentication auth, long conversationId, Map<String, Object> input) {

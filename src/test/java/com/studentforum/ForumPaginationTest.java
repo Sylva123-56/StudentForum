@@ -5,6 +5,11 @@ import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.ForumService;
 import com.studentforum.service.AccountService;
 import com.studentforum.service.PostEditService;
+import com.studentforum.service.AccountAccessService;
+import com.studentforum.repository.ForumRepository;
+import com.studentforum.service.ForumQueryService;
+import com.studentforum.service.NotificationService;
+import com.studentforum.service.PointService;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -28,7 +33,10 @@ class ForumPaginationTest {
 
     @BeforeEach void setup() {
         mapper = mock(ForumMapper.class);
-        controller = new ForumController(mapper, new ForumService(mapper, null), new AccountService(mapper, new ForumService(mapper, null), null), new PostEditService(mapper, new ForumService(mapper, null)), null);
+        ForumService service = TestServices.forum(mapper, null);
+        controller = new ForumController(service, new AccountService(mapper, new AccountAccessService(mapper), TestServices.points(mapper, null), null),
+                new PostEditService(mapper, service), new ForumQueryService(mapper, new AccountAccessService(mapper), new ForumRepository(null, mapper)),
+                TestServices.notifications(mapper, null), TestServices.points(mapper, null), null);
         auth = new UsernamePasswordAuthenticationToken("7", null, List.of());
     }
 

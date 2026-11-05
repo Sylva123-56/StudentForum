@@ -2,7 +2,8 @@ package com.studentforum;
 
 import com.studentforum.mapper.ForumMapper;
 import com.studentforum.service.AccountService;
-import com.studentforum.service.ForumService;
+import com.studentforum.service.AccountAccessService;
+import com.studentforum.service.PointService;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,14 +15,15 @@ import static org.mockito.Mockito.*;
 
 class AccountServiceTest {
     private final ForumMapper mapper = mock(ForumMapper.class);
-    private final ForumService forum = mock(ForumService.class);
+    private final AccountAccessService access = mock(AccountAccessService.class);
+    private final PointService points = mock(PointService.class);
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
-    private final AccountService accounts = new AccountService(mapper, forum, encoder);
+    private final AccountService accounts = new AccountService(mapper, access, points, encoder);
 
     @Test void rejectsInvalidRegistrationBeforeWriting() {
         assertEquals(400, assertThrows(ResponseStatusException.class,
                 () -> accounts.register(Map.of("email", "wrong", "username", "小王", "password", "12345678"))).getStatusCode().value());
-        verifyNoInteractions(mapper, forum, encoder);
+        verifyNoInteractions(mapper, access, points, encoder);
     }
 
     @Test void loginKeepsTheRoleFromCredentials() {
@@ -29,7 +31,6 @@ class AccountServiceTest {
         Map<String, Object> profile = Map.of("id", 7L, "username", "user");
         when(mapper.credentials("a@example.test")).thenReturn(credentials);
         when(encoder.matches("secret", "hash")).thenReturn(true);
-        when(forum.number(credentials, "id")).thenReturn(7L);
         when(mapper.user(7L)).thenReturn(profile);
         var account = accounts.login(Map.of("email", " A@EXAMPLE.TEST ", "password", "secret"));
         assertEquals(7L, account.id());

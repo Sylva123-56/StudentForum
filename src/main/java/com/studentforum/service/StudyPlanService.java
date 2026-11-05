@@ -27,17 +27,25 @@ public class StudyPlanService {
     private static final Set<String> STATUSES = Set.of("active", "completed", "archived");
 
     private final JdbcTemplate db;
-    private final ForumService service;
+    private final AccountAccessService accounts;
     private final StudyToolService tools;
+    private final StudyPreferencesService preferences;
+    private final StudySettingsService studySettings;
+    private final StudyRewardService rewards;
+    private final StudyPlanProgressService progress;
 
-    public StudyPlanService(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public StudyPlanService(JdbcTemplate db, AccountAccessService accounts, StudyToolService tools, StudyPreferencesService preferences, StudySettingsService studySettings, StudyRewardService rewards, StudyPlanProgressService progress) {
         this.db = db;
-        this.service = service;
+        this.accounts = accounts;
         this.tools = tools;
+        this.preferences = preferences;
+        this.studySettings = studySettings;
+        this.rewards = rewards;
+        this.progress = progress;
     }
 
     private long id(Authentication auth) {
-        return service.id(auth);
+        return accounts.id(auth);
     }
 
     private void check(boolean condition, String message) {
@@ -56,8 +64,8 @@ public class StudyPlanService {
 
     private Map<String, Object> detail(long planId, long user) {
         Map<String, Object> plan = new LinkedHashMap<>(plan(planId, user));
-        plan.put("tasks", tools.planTasks(planId));
-        plan.put("progress", tools.progress(planId));
+        plan.put("tasks", progress.planTasks(planId));
+        plan.put("progress", progress.progress(planId));
         plan.put("focusMinutes", tools.rowNumber(tools.row("SELECT COALESCE(SUM(duration_minutes),0) AS minutes FROM focus_sessions WHERE plan_id=?", planId), "minutes"));
         if (plan.get("group_id") != null) {
             Map<String, Object> group = tools.row("SELECT name FROM study_groups WHERE id=?", plan.get("group_id"));
@@ -90,19 +98,19 @@ public class StudyPlanService {
         List<Map<String, Object>> items = new ArrayList<>();
         for (Map<String, Object> row : db.queryForList(sql.toString(), args.toArray())) {
             Map<String, Object> plan = new LinkedHashMap<>(row);
-            plan.put("progress", tools.progress(tools.rowNumber(row, "id")));
+            plan.put("progress", progress.progress(tools.rowNumber(row, "id")));
             items.add(plan);
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("items", items);
         result.put("stats", stats(user));
-        result.put("subjects", tools.subjects(user));
+        result.put("subjects", preferences.subjects(user));
         return result;
     }
 
     @Transactional
     public Map<String, Object> createPlan(Authentication auth, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         String title = tools.text(input, "title", 2, 60, "计划标题需要 2 到 60 个字");
         String subject = tools.optionalText(input, "subject", 40);
@@ -169,7 +177,7 @@ public class StudyPlanService {
 
     @Transactional
     public Map<String, Object> updatePlan(Authentication auth, long planId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> plan = plan(planId, user);
         String title = input.containsKey("title") ? tools.text(input, "title", 2, 60, "计划标题需要 2 到 60 个字") : String.valueOf(plan.get("title"));
@@ -189,7 +197,7 @@ public class StudyPlanService {
 
         db.update("UPDATE study_plans SET title=?,subject=?,goal=?,start_date=?,end_date=?,status=?,group_id=? WHERE id=?",
                 title, subject == null ? "" : subject, goal == null ? "" : goal, start, end, status, groupId, planId);
-        tools.syncPlanStatus(planId);
+        progress.syncPlanStatus(planId);
         return detail(planId, user);
     }
 
@@ -199,17 +207,17 @@ public class StudyPlanService {
      */
     @Transactional
     public Map<String, Object> archivePlan(Authentication auth, long planId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         plan(planId, user);
         boolean archived = input == null || !input.containsKey("archived") || booleanFlag(input, "archived");
         db.update("UPDATE study_plans SET status=? WHERE id=?", archived ? "archived" : "active", planId);
-        if (!archived) tools.syncPlanStatus(planId);
+        if (!archived) progress.syncPlanStatus(planId);
         return detail(planId, user);
     }
 
     public Map<String, Object> deletePlan(Authentication auth, long planId) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         plan(planId, user);
         db.update("DELETE FROM study_plans WHERE id=?", planId);
@@ -220,7 +228,7 @@ public class StudyPlanService {
 
     @Transactional
     public Map<String, Object> addTask(Authentication auth, long planId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         plan(planId, user);
         String title = tools.text(input, "title", 1, 100, "任务标题需要 1 到 100 个字");
@@ -234,8 +242,8 @@ public class StudyPlanService {
         long order = tools.rowNumber(tools.row("SELECT COALESCE(MAX(sort_order),-1)+1 AS next FROM study_tasks WHERE plan_id=?", planId), "next");
         db.update("INSERT INTO study_tasks(plan_id,parent_id,title,due_date,status,sort_order) VALUES(?,?,?,?,'pending',?)", planId, parentId, title, due, order);
         long taskId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
-        if (parentId != null) tools.rollupTask(parentId);
-        tools.syncPlanStatus(planId);
+        if (parentId != null) progress.rollupTask(parentId);
+        progress.syncPlanStatus(planId);
         return detail(planId, user);
     }
 
@@ -245,7 +253,7 @@ public class StudyPlanService {
      */
     @Transactional
     public Map<String, Object> updateTask(Authentication auth, long planId, long taskId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> before = plan(planId, user);
         String statusBefore = String.valueOf(before.get("status"));
@@ -267,26 +275,26 @@ public class StudyPlanService {
             if (wasDone != nowDone) {
                 db.update("UPDATE study_tasks SET status=?,completed_at=? WHERE id=?", status, nowDone ? LocalDateTime.now() : null, taskId);
                 if (nowDone) {
-                    Map<String, Object> settings = tools.settings();
-                    int reward = tools.setting(settings, "plan_task_points", 1);
-                    int cap = tools.setting(settings, "plan_task_daily_cap", 10);
+                    Map<String, Object> settings = studySettings.settings();
+                    int reward = studySettings.setting(settings, "plan_task_points", 1);
+                    int cap = studySettings.setting(settings, "plan_task_daily_cap", 10);
                     points += reward;
-                    badges.addAll(tools.award(user, "plan_task", reward, "study_task", taskId, cap));
+                    badges.addAll(rewards.award(user, "plan_task", reward, "study_task", taskId, cap));
                 }
-                if (task.get("parent_id") != null) tools.rollupTask(tools.rowNumber(task, "parent_id"));
+                if (task.get("parent_id") != null) progress.rollupTask(tools.rowNumber(task, "parent_id"));
                 if (nowDone && booleanFlag(input, "checkin")) checkin = autoCheckin(user, before, taskId);
             }
         }
-        tools.syncPlanStatus(planId);
+        progress.syncPlanStatus(planId);
 
         // 这一步刚好把整个计划做完：额外给一次"完成计划"奖励，且按 point_logs 去重只发一次
         if (!"completed".equals(statusBefore) && "completed".equals(String.valueOf(plan(planId, user).get("status")))) {
-            Map<String, Object> settings = tools.settings();
-            int bonus = tools.setting(settings, "plan_complete_points", 10);
+            Map<String, Object> settings = studySettings.settings();
+            int bonus = studySettings.setting(settings, "plan_complete_points", 10);
             boolean already = tools.row("SELECT 1 FROM point_logs WHERE user_id=? AND ref_type='study_plan' AND ref_id=?", user, planId) != null;
             if (!already && bonus > 0) {
                 points += bonus;
-                badges.addAll(tools.award(user, "plan_complete", bonus, "study_plan", planId, 0));
+                badges.addAll(rewards.award(user, "plan_complete", bonus, "study_plan", planId, 0));
             }
         }
         Map<String, Object> result = detail(planId, user);
@@ -316,13 +324,13 @@ public class StudyPlanService {
 
     @Transactional
     public Map<String, Object> deleteTask(Authentication auth, long planId, long taskId) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         plan(planId, user);
         Map<String, Object> task = tools.requiredRow("SELECT * FROM study_tasks WHERE id=? AND plan_id=?", "计划任务不存在", taskId, planId);
         db.update("DELETE FROM study_tasks WHERE id=?", taskId);
-        if (task.get("parent_id") != null) tools.rollupTask(tools.rowNumber(task, "parent_id"));
-        tools.syncPlanStatus(planId);
+        if (task.get("parent_id") != null) progress.rollupTask(tools.rowNumber(task, "parent_id"));
+        progress.syncPlanStatus(planId);
         return detail(planId, user);
     }
 
@@ -336,7 +344,7 @@ public class StudyPlanService {
         result.put("official", db.queryForList("SELECT t.*,u.username AS owner_username FROM plan_templates t LEFT JOIN users u ON u.id=t.owner_id WHERE t.owner_id IS NULL" + filter + " ORDER BY t.id", args.toArray()));
         result.put("mine", db.queryForList("SELECT t.*,u.username AS owner_username FROM plan_templates t LEFT JOIN users u ON u.id=t.owner_id WHERE t.owner_id=?" + filter + " ORDER BY t.id DESC", prepend(user, args)));
         result.put("shared", db.queryForList("SELECT t.*,u.username AS owner_username FROM plan_templates t JOIN users u ON u.id=t.owner_id WHERE t.owner_id IS NOT NULL AND t.owner_id<>? AND t.visibility='shared'" + filter + " ORDER BY t.use_count DESC,t.id DESC LIMIT 50", prepend(user, args)));
-        result.put("subjects", tools.subjects(user));
+        result.put("subjects", preferences.subjects(user));
         return result;
     }
 
@@ -350,7 +358,7 @@ public class StudyPlanService {
     /** 把模板存成我的计划模板，之后可以反复套用。 */
     @Transactional
     public Map<String, Object> createTemplate(Authentication auth, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         String title = tools.text(input, "title", 2, 60, "模板名称需要 2 到 60 个字");
         String subject = tools.optionalText(input, "subject", 40);
@@ -368,7 +376,7 @@ public class StudyPlanService {
     /** 把自己某个计划直接存成模板（用户最常用的入口）。 */
     @Transactional
     public Map<String, Object> templateFromPlan(Authentication auth, long planId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> plan = plan(planId, user);
         Map<String, Object> body = input == null ? new LinkedHashMap<>() : input;
@@ -377,7 +385,7 @@ public class StudyPlanService {
         check(cycle >= 1 && cycle <= 365, "周期需要在 1 到 365 天之间");
         String visibility = body.get("visibility") == null ? "shared" : String.valueOf(body.get("visibility"));
         check("shared".equals(visibility) || "private".equals(visibility), "模板可见性无效");
-        List<Map<String, Object>> tasks = tools.planTasks(planId);
+        List<Map<String, Object>> tasks = progress.planTasks(planId);
         List<String> lines = new ArrayList<>();
         for (Map<String, Object> task : tasks) {
             if (task.get("parent_id") != null) continue;
@@ -403,7 +411,7 @@ public class StudyPlanService {
      */
     @Transactional
     public Map<String, Object> applyTemplateEndpoint(Authentication auth, long templateId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> template = tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
         check(template.get("owner_id") == null || tools.rowNumber(template, "owner_id") == user || "shared".equals(template.get("visibility")), "这个模板没有公开");
@@ -427,7 +435,7 @@ public class StudyPlanService {
     }
 
     public Map<String, Object> deleteTemplate(Authentication auth, long templateId) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> template = tools.requiredRow("SELECT * FROM plan_templates WHERE id=?", "模板不存在", templateId);
         if (template.get("owner_id") == null || tools.rowNumber(template, "owner_id") != user) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能删除自己的模板");

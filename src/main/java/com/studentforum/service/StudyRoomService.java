@@ -24,21 +24,27 @@ public class StudyRoomService {
     private static final int MAX_MESSAGES = 50;
 
     private final JdbcTemplate db;
-    private final ForumService service;
+    private final AccountAccessService accounts;
     private final StudyToolService tools;
+    private final StudyPreferencesService preferences;
+    private final StudyRoomAccessService roomAccess;
+    private final BadgeService badges;
 
-    public StudyRoomService(JdbcTemplate db, ForumService service, StudyToolService tools) {
+    public StudyRoomService(JdbcTemplate db, AccountAccessService accounts, StudyToolService tools, StudyPreferencesService preferences, StudyRoomAccessService roomAccess, BadgeService badges) {
         this.db = db;
-        this.service = service;
+        this.accounts = accounts;
         this.tools = tools;
+        this.preferences = preferences;
+        this.roomAccess = roomAccess;
+        this.badges = badges;
     }
 
     private long id(Authentication auth) {
-        return service.id(auth);
+        return accounts.id(auth);
     }
 
     /**
-     * 自习室对游客开放围观，所以这里不能直接用 {@link ForumService#id}：未登录时 Spring 传进来的是
+     * 自习室对游客开放围观，所以这里不能直接用 {@link AccountAccessService#id}：未登录时 Spring 传进来的是
      * 匿名身份（不是 null），直接调用会抛 401。游客返回 null，登录用户返回真实 id。
      */
     private Long viewer(Authentication auth) {
@@ -57,7 +63,7 @@ public class StudyRoomService {
 
     private Map<String, Object> room(long roomId, long user) {
         Map<String, Object> room = tools.requiredRow("SELECT r.*,u.username AS owner_username FROM study_rooms r JOIN users u ON u.id=r.owner_id WHERE r.id=?", "自习室不存在", roomId);
-        tools.requireRoomView(room, user);
+        roomAccess.requireRoomView(room, user);
         room.put("joined", db.queryForList("SELECT id FROM study_room_members WHERE room_id=? AND user_id=?", roomId, user).size() > 0);
         room.put("online", db.queryForList("SELECT m.user_id,u.username,m.total_minutes,m.joined_at,m.last_active_at FROM study_room_members m JOIN users u ON u.id=m.user_id WHERE m.room_id=? ORDER BY m.total_minutes DESC LIMIT 50", roomId));
         room.put("groupName", room.get("group_id") == null ? null : groupName(tools.rowNumber(room, "group_id")));
@@ -96,13 +102,13 @@ public class StudyRoomService {
         result.put("items", items);
         result.put("scope", scope);
         if (user != null) result.put("mine", db.queryForList("SELECT r.id,r.name,r.status,r.member_count,r.focus_minutes,m.total_minutes FROM study_rooms r LEFT JOIN study_room_members m ON m.room_id=r.id AND m.user_id=? WHERE r.owner_id=? OR m.user_id IS NOT NULL ORDER BY r.created_at DESC LIMIT 20", user, user));
-        result.put("groups", user == null ? List.of() : tools.myGroups(user));
+        result.put("groups", user == null ? List.of() : preferences.myGroups(user));
         return result;
     }
 
     @Transactional
     public Map<String, Object> createRoom(Authentication auth, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         String name = tools.text(input, "name", 2, 40, "自习室名称需要 2 到 40 个字");
         String goal = tools.optionalText(input, "goal", 120);
@@ -129,7 +135,7 @@ public class StudyRoomService {
                 db.update("INSERT INTO notifications(user_id,kind,message) VALUES(?,'room',?)", tools.rowNumber(member, "user_id"), "学习小组「" + groupName(groupId) + "」开了一间自习室：" + name);
             }
         }
-        tools.evaluateBadges(user);
+        badges.evaluateBadges(user);
         return room(roomId, user);
     }
 
@@ -144,35 +150,35 @@ public class StudyRoomService {
 
     @Transactional
     public Map<String, Object> join(Authentication auth, long roomId) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
         check("active".equals(row.get("status")), "自习室已关闭");
-        tools.requireRoomView(row, user);
+        roomAccess.requireRoomView(row, user);
         if (db.queryForList("SELECT id FROM study_room_members WHERE room_id=? AND user_id=?", roomId, user).isEmpty()) {
             db.update("INSERT INTO study_room_members(room_id,user_id,role,total_minutes,joined_at,last_active_at) VALUES(?,?,'member',0,NOW(),NOW())", roomId, user);
-            tools.refreshRoomTotals(roomId);
+            roomAccess.refreshRoomTotals(roomId);
         }
         return room(roomId, user);
     }
 
     @Transactional
     public Map<String, Object> leave(Authentication auth, long roomId) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
         check(tools.rowNumber(row, "owner_id") != user, "房主不能退出自己的自习室，可以直接关闭");
         db.update("DELETE FROM study_room_members WHERE room_id=? AND user_id=?", roomId, user);
-        tools.refreshRoomTotals(roomId);
+        roomAccess.refreshRoomTotals(roomId);
         return Map.of("left", true);
     }
 
     @Transactional
     public Map<String, Object> updateRoom(Authentication auth, long roomId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
-        tools.requireRoomOwner(row, user);
+        roomAccess.requireRoomOwner(row, user);
         String name = input.containsKey("name") ? tools.text(input, "name", 2, 40, "自习室名称需要 2 到 40 个字") : String.valueOf(row.get("name"));
         String goal = input.containsKey("goal") ? tools.optionalText(input, "goal", 120) : (String) row.get("goal");
         String subject = input.containsKey("subject") ? tools.optionalText(input, "subject", 40) : (String) row.get("subject");
@@ -195,10 +201,10 @@ public class StudyRoomService {
 
     @Transactional
     public Map<String, Object> deleteRoom(Authentication auth, long roomId) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
-        tools.requireRoomOwner(row, user);
+        roomAccess.requireRoomOwner(row, user);
         db.update("DELETE FROM study_rooms WHERE id=?", roomId);
         return Map.of("deleted", true);
     }
@@ -208,7 +214,7 @@ public class StudyRoomService {
     public Map<String, Object> messages(Authentication auth, long roomId) {
         long user = guest(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
-        tools.requireRoomView(row, user);
+        roomAccess.requireRoomView(row, user);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("items", db.queryForList("SELECT m.id,m.kind,m.content,m.created_at,m.user_id,u.username FROM study_room_messages m JOIN users u ON u.id=m.user_id WHERE m.room_id=? ORDER BY m.id DESC LIMIT ?", roomId, MAX_MESSAGES));
         result.put("muted", tools.rowFlag(row, "muted"));
@@ -219,10 +225,10 @@ public class StudyRoomService {
     /** 发文字鼓励。静音房间里只有房主能说话，避免打扰正在专注的人。 */
     @Transactional
     public Map<String, Object> sendMessage(Authentication auth, long roomId, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
-        tools.requireRoomView(row, user);
+        roomAccess.requireRoomView(row, user);
         boolean host = tools.rowNumber(row, "owner_id") == user;
         check(!tools.rowFlag(row, "muted") || host, "房间已开启静音，只有房主可以发言");
         check(db.queryForList("SELECT id FROM study_room_members WHERE room_id=? AND user_id=?", roomId, user).size() > 0, "请先加入自习室再发言");
@@ -236,7 +242,7 @@ public class StudyRoomService {
     }
 
     public Map<String, Object> deleteMessage(Authentication auth, long roomId, long messageId) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         Map<String, Object> room = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
         Map<String, Object> message = tools.requiredRow("SELECT * FROM study_room_messages WHERE id=? AND room_id=?", "消息不存在", messageId, roomId);
@@ -250,7 +256,7 @@ public class StudyRoomService {
     public Map<String, Object> leaderboard(Authentication auth, long roomId) {
         long user = guest(auth);
         Map<String, Object> row = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
-        tools.requireRoomView(row, user);
+        roomAccess.requireRoomView(row, user);
         return Map.of("items", leaderboardRows(roomId));
     }
 

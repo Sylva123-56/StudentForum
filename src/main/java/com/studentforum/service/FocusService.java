@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.studentforum.repository.FocusRepository;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,18 +25,29 @@ public class FocusService {
     /** 一次专注最长 12 小时：再长也不像是真实计时，多半是前端没停表。 */
     private static final int MAX_MINUTES = 720;
 
-    private final JdbcTemplate db;
-    private final ForumService service;
+    private final FocusRepository focus;
+    private final AccountAccessService accounts;
     private final StudyToolService tools;
+    private final StudyRoomAccessService roomAccess;
+    private final StudySettingsService studySettings;
+    private final StudyRewardService rewards;
 
-    public FocusService(JdbcTemplate db, ForumService service, StudyToolService tools) {
-        this.db = db;
-        this.service = service;
+    public FocusService(FocusRepository focus, AccountAccessService accounts, StudyToolService tools, StudyRoomAccessService roomAccess, StudySettingsService studySettings, StudyRewardService rewards) {
+        this.focus = focus;
+        this.accounts = accounts;
         this.tools = tools;
+        this.roomAccess = roomAccess;
+        this.studySettings = studySettings;
+        this.rewards = rewards;
+    }
+
+    private Map<String, Object> required(Map<String, Object> row, String message) {
+        if (row == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, message);
+        return row;
     }
 
     private long id(Authentication auth) {
-        return service.id(auth);
+        return accounts.id(auth);
     }
 
     private void check(boolean condition, String message) {
@@ -56,28 +67,28 @@ public class FocusService {
      */
     @Transactional
     public Map<String, Object> createSession(Authentication auth, Map<String, Object> input) {
-        service.writable(auth);
+        accounts.writable(auth);
         long user = id(auth);
         int duration = (int) tools.number(input, "durationMinutes", 0);
         check(duration >= 1 && duration <= MAX_MINUTES, "专注时长需要在 1 到 720 分钟之间");
 
         Long roomId = input.get("roomId") == null ? null : tools.number(input, "roomId", 0);
         if (roomId != null && roomId > 0) {
-            Map<String, Object> room = tools.requiredRow("SELECT * FROM study_rooms WHERE id=?", "自习室不存在", roomId);
+            Map<String, Object> room = required(focus.room(roomId), "自习室不存在");
             check("active".equals(String.valueOf(room.get("status"))), "自习室已关闭");
-            tools.requireRoomView(room, user);
+            roomAccess.requireRoomView(room, user);
             // 在自习室里开始专注就等于加入自习室，否则时长累加会落空、房间榜也看不到自己
-            if (db.queryForList("SELECT id FROM study_room_members WHERE room_id=? AND user_id=?", roomId, user).isEmpty()) {
-                db.update("INSERT IGNORE INTO study_room_members(room_id,user_id,role,total_minutes) VALUES(?,?,'member',0)", roomId, user);
-                tools.refreshRoomTotals(roomId);
+            if (!focus.isMember(roomId, user)) {
+                focus.join(roomId, user);
+                roomAccess.refreshRoomTotals(roomId);
             }
         } else roomId = null;
 
         Long planId = input.get("planId") == null ? null : tools.number(input, "planId", 0);
         Long taskId = input.get("taskId") == null ? null : tools.number(input, "taskId", 0);
-        if (planId != null && planId > 0) tools.requiredRow("SELECT id FROM study_plans WHERE id=? AND user_id=?", "学习计划不存在", planId, user);
+        if (planId != null && planId > 0) required(focus.plan(planId, user), "学习计划不存在");
         else planId = null;
-        if (taskId != null && taskId > 0) tools.requiredRow("SELECT t.id FROM study_tasks t JOIN study_plans p ON p.id=t.plan_id WHERE t.id=? AND p.user_id=?", "计划任务不存在", taskId, user);
+        if (taskId != null && taskId > 0) required(focus.task(taskId, user), "计划任务不存在");
         else taskId = null;
 
         LocalDateTime endedAt = input.get("endedAt") == null ? LocalDateTime.now() : parseDateTime(input.get("endedAt"));
@@ -89,28 +100,26 @@ public class FocusService {
         String subject = tools.optionalText(input, "subject", 40);
         String task = tools.optionalText(input, "task", 120);
         if (taskId != null) {
-            Map<String, Object> row = tools.requiredRow("SELECT title FROM study_tasks WHERE id=?", "计划任务不存在", taskId);
+            Map<String, Object> row = required(focus.taskTitle(taskId), "计划任务不存在");
             if (task == null) task = String.valueOf(row.get("title"));
         }
         String note = tools.optionalText(input, "note", 255);
         String source = input.get("source") == null ? "timer" : String.valueOf(input.get("source"));
         check(Set.of("timer", "manual", "room", "plan").contains(source), "专注来源无效");
 
-        db.update("INSERT INTO focus_sessions(user_id,subject,task,note,duration_minutes,started_at,ended_at,room_id,plan_id,task_id,source) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                user, subject == null ? "" : subject, task == null ? "" : task, note == null ? "" : note, duration, startedAt, endedAt, roomId, planId, taskId, source);
-        long sessionId = db.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
+        long sessionId = focus.insertSession(user, subject == null ? "" : subject, task == null ? "" : task, note == null ? "" : note, duration, startedAt, endedAt, roomId, planId, taskId, source);
 
         if (roomId != null) {
-            db.update("UPDATE study_room_members SET total_minutes=total_minutes+?,last_active_at=NOW() WHERE room_id=? AND user_id=?", duration, roomId, user);
-            tools.refreshRoomTotals(roomId);
+            focus.addMinutes(duration, roomId, user);
+            roomAccess.refreshRoomTotals(roomId);
         }
 
-        Map<String, Object> settings = tools.settings();
-        int points = tools.setting(settings, "focus_points", 1);
-        int cap = tools.setting(settings, "focus_daily_cap", 10);
-        List<Map<String, Object>> badges = tools.award(user, "focus", points, "focus", sessionId, cap);
+        Map<String, Object> settings = studySettings.settings();
+        int points = studySettings.setting(settings, "focus_points", 1);
+        int cap = studySettings.setting(settings, "focus_daily_cap", 10);
+        List<Map<String, Object>> badges = rewards.award(user, "focus", points, "focus", sessionId, cap);
 
-        Map<String, Object> result = new LinkedHashMap<>(tools.requiredRow("SELECT * FROM focus_sessions WHERE id=?", "专注记录不存在", sessionId));
+        Map<String, Object> result = new LinkedHashMap<>(required(focus.session(sessionId), "专注记录不存在"));
         result.put("pointsAwarded", points);
         result.put("badges", badges);
         return result;
@@ -132,7 +141,7 @@ public class FocusService {
         long user = id(auth);
         LocalDate start = rangeStart(range);
         int offset = Math.max(0, Math.min(9999, page - 1)) * 20;
-        List<Map<String, Object>> rows = db.queryForList("SELECT f.*,r.name AS room_name,p.title AS plan_title FROM focus_sessions f LEFT JOIN study_rooms r ON r.id=f.room_id LEFT JOIN study_plans p ON p.id=f.plan_id WHERE f.user_id=? AND f.started_at>=? ORDER BY f.started_at DESC LIMIT 21 OFFSET ?", user, start.atStartOfDay(), offset);
+        List<Map<String, Object>> rows = focus.sessions(user, start.atStartOfDay(), offset);
         boolean hasNext = rows.size() > 20;
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("items", hasNext ? rows.subList(0, 20) : rows);
@@ -153,7 +162,7 @@ public class FocusService {
         result.put("start", start.toString());
         result.put("end", today.toString());
 
-        List<Map<String, Object>> daily = db.queryForList("SELECT DATE(started_at) AS date,COUNT(*) AS sessions,SUM(duration_minutes) AS minutes FROM focus_sessions WHERE user_id=? AND started_at>=? GROUP BY DATE(started_at) ORDER BY date", user, start.atStartOfDay());
+        List<Map<String, Object>> daily = focus.daily(user, start.atStartOfDay());
         List<Map<String, Object>> days = new ArrayList<>();
         for (int index = 0; index <= ChronoUnit.DAYS.between(start, today); index++) {
             LocalDate date = start.plusDays(index);
@@ -168,7 +177,7 @@ public class FocusService {
         result.put("days", days);
 
         // 时段分布：24 格热力图，按周几 + 小时聚合最近 8 周的数据
-        List<Map<String, Object>> hours = db.queryForList("SELECT DAYOFWEEK(started_at) AS dow,HOUR(started_at) AS hour,SUM(duration_minutes) AS minutes FROM focus_sessions WHERE user_id=? AND started_at>=DATE_SUB(CURRENT_DATE(),INTERVAL 56 DAY) GROUP BY DAYOFWEEK(started_at),HOUR(started_at)", user);
+        List<Map<String, Object>> hours = focus.hourlyHeatmap(user);
         List<Map<String, Object>> heatmap = new ArrayList<>();
         for (Map<String, Object> row : hours) {
             Map<String, Object> cell = new LinkedHashMap<>();
@@ -178,13 +187,13 @@ public class FocusService {
             heatmap.add(cell);
         }
         result.put("heatmap", heatmap);
-        result.put("subjects", db.queryForList("SELECT subject,COUNT(*) AS sessions,SUM(duration_minutes) AS minutes FROM focus_sessions WHERE user_id=? AND started_at>=? AND subject<>'' GROUP BY subject ORDER BY minutes DESC LIMIT 10", user, start.atStartOfDay()));
+        result.put("subjects", focus.subjects(user, start.atStartOfDay()));
         result.put("bestHour", heatmap.stream().max((left, right) -> Long.compare(tools.rowNumber(left, "minutes"), tools.rowNumber(right, "minutes"))).map(cell -> cell.get("hour")).orElse(null));
         return result;
     }
 
     private Map<String, Object> summary(long user, LocalDate start, LocalDate end) {
-        Map<String, Object> row = tools.row("SELECT COUNT(*) AS sessions,COALESCE(SUM(duration_minutes),0) AS minutes,COALESCE(MAX(duration_minutes),0) AS longest FROM focus_sessions WHERE user_id=? AND started_at>=? AND started_at<?", user, start.atStartOfDay(), end.plusDays(1).atStartOfDay());
+        Map<String, Object> row = focus.summary(user, start.atStartOfDay(), end.plusDays(1).atStartOfDay());
         Map<String, Object> result = new LinkedHashMap<>();
         long minutes = row == null ? 0 : tools.rowNumber(row, "minutes");
         result.put("sessions", row == null ? 0 : tools.rowNumber(row, "sessions"));
@@ -192,10 +201,10 @@ public class FocusService {
         result.put("hours", Math.round(minutes / 6.0) / 10.0);
         result.put("longest", row == null ? 0 : tools.rowNumber(row, "longest"));
         result.put("average", row == null || tools.rowNumber(row, "sessions") == 0 ? 0 : minutes / tools.rowNumber(row, "sessions"));
-        result.put("today", tools.rowNumber(tools.row("SELECT COALESCE(SUM(duration_minutes),0) AS minutes FROM focus_sessions WHERE user_id=? AND DATE(started_at)=CURRENT_DATE()", user), "minutes"));
-        result.put("week", tools.rowNumber(tools.row("SELECT COALESCE(SUM(duration_minutes),0) AS minutes FROM focus_sessions WHERE user_id=? AND YEARWEEK(started_at,1)=YEARWEEK(CURRENT_DATE(),1)", user), "minutes"));
-        result.put("month", tools.rowNumber(tools.row("SELECT COALESCE(SUM(duration_minutes),0) AS minutes FROM focus_sessions WHERE user_id=? AND DATE_FORMAT(started_at,'%Y-%m')=DATE_FORMAT(CURRENT_DATE(),'%Y-%m')", user), "minutes"));
-        result.put("total", tools.rowNumber(tools.row("SELECT COALESCE(SUM(duration_minutes),0) AS minutes FROM focus_sessions WHERE user_id=?", user), "minutes"));
+        result.put("today", tools.rowNumber(focus.todayMinutes(user), "minutes"));
+        result.put("week", tools.rowNumber(focus.weekMinutes(user), "minutes"));
+        result.put("month", tools.rowNumber(focus.monthMinutes(user), "minutes"));
+        result.put("total", tools.rowNumber(focus.totalMinutes(user), "minutes"));
         return result;
     }
 
@@ -223,13 +232,7 @@ public class FocusService {
         };
         int size = 20;
         int offset = Math.max(0, Math.min(999, page - 1)) * size;
-        String sql = "SELECT f.user_id,u.username,u.points,"
-                + "SUM(CASE WHEN f.started_at>=? THEN f.duration_minutes ELSE 0 END) AS range_minutes,"
-                + "COUNT(CASE WHEN f.started_at>=? THEN 1 END) AS range_sessions,"
-                + "SUM(f.duration_minutes) AS total_minutes "
-                + "FROM focus_sessions f JOIN users u ON u.id=f.user_id WHERE u.status='active' "
-                + "GROUP BY f.user_id,u.username,u.points ORDER BY range_minutes DESC,total_minutes DESC LIMIT ? OFFSET ?";
-        List<Map<String, Object>> items = db.queryForList(sql, start.atStartOfDay(), start.atStartOfDay(), size + 1, offset);
+        List<Map<String, Object>> items = focus.leaderboard(start.atStartOfDay(), size + 1, offset);
         boolean hasNext = items.size() > size;
         List<Map<String, Object>> rows = new ArrayList<>(hasNext ? items.subList(0, size) : items);
         long me = auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal()) ? id(auth) : 0;
@@ -238,7 +241,7 @@ public class FocusService {
         result.put("items", rows);
         result.put("hasNext", hasNext);
         result.put("page", Math.max(1, page));
-        result.put("mine", me == 0 ? null : tools.row("SELECT SUM(duration_minutes) AS minutes,COUNT(*) AS sessions FROM focus_sessions WHERE user_id=? AND started_at>=?", me, start.atStartOfDay()));
+        result.put("mine", me == 0 ? null : focus.myLeaderboard(me, start.atStartOfDay()));
         return result;
     }
 
@@ -246,8 +249,8 @@ public class FocusService {
     public Map<String, Object> myRooms(Authentication auth) {
         long user = id(auth);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("participated", db.queryForList("SELECT r.id,r.name,r.status,r.owner_id,r.focus_minutes,r.created_at,m.total_minutes,m.joined_at FROM study_room_members m JOIN study_rooms r ON r.id=m.room_id WHERE m.user_id=? ORDER BY r.created_at DESC LIMIT 20", user));
-        result.put("owned", db.queryForList("SELECT id,name,status,member_count,focus_minutes,created_at FROM study_rooms WHERE owner_id=? ORDER BY created_at DESC LIMIT 20", user));
+        result.put("participated", focus.participatedRooms(user));
+        result.put("owned", focus.ownedRooms(user));
         return result;
     }
 }

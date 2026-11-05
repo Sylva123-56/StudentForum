@@ -19,7 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 class KnowledgeServiceTest {
     JdbcTemplate db; ForumMapper mapper; KnowledgeService k; Authentication auth;
-    @BeforeEach void setup(){db=mock(JdbcTemplate.class);mapper=mock(ForumMapper.class);k=new KnowledgeService(db,new ForumService(mapper,db));auth=new UsernamePasswordAuthenticationToken("7",null,List.of());when(mapper.user(7L)).thenReturn(Map.of("id",7L,"status","active","reputation",100,"role","student"));}
+    @BeforeEach void setup(){db=mock(JdbcTemplate.class);mapper=mock(ForumMapper.class);k=new KnowledgeService(db,TestServices.forum(mapper,db));auth=new UsernamePasswordAuthenticationToken("7",null,List.of());when(mapper.user(7L)).thenReturn(Map.of("id",7L,"status","active","reputation",100,"role","student"));}
     void row(String match,Map<String,Object> row){when(db.queryForList(argThat(sql->sql!=null&&sql.contains(match)),any(Object[].class))).thenReturn(List.of(row));}
     @Test void anonymousUserIsNotAuthenticated(){assertEquals(0,k.user(null));assertEquals(0,k.user(new UsernamePasswordAuthenticationToken("anonymousUser",null,List.of())));}
     @Test void privateMistakeIsInvisibleToNonOwner(){row("FROM mistakes",Map.of("id",3L,"user_id",8L,"visibility","private"));assertEquals(404,assertThrows(ResponseStatusException.class,()->k.mistake(auth,3)).getStatusCode().value());verify(db,never()).update(anyString(),any(Object[].class));}
