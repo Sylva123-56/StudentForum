@@ -29,8 +29,8 @@ class ForumHttpContractTest {
 
     @BeforeEach void setup() {
         ForumService forum = TestServices.forum(mapper, null);
-        http = MockMvcBuilders.standaloneSetup(new ForumController(forum, mock(AccountService.class),
-                new PostEditService(mapper, forum), new ForumQueryService(mapper, new AccountAccessService(mapper), posts),
+        http = MockMvcBuilders.standaloneSetup(new ForumController(forum, new AccountService(mapper,new AccountAccessService(mapper),TestServices.points(mapper,null),null),
+                new PostEditService(mapper, forum, new com.studentforum.service.AccountAccessService(mapper)), new ForumQueryService(mapper, new AccountAccessService(mapper), posts),
                 TestServices.notifications(mapper, null), TestServices.points(mapper, null), null))
                 .setControllerAdvice(new ApiErrors()).build();
     }
@@ -128,5 +128,12 @@ class ForumHttpContractTest {
         when(mapper.points(7)).thenReturn(200);
         http.perform(get("/api/me/points").principal(auth)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.points").value(200)).andExpect(jsonPath("$.level").value(3));
+    }
+    @Test void currentAccountEndpointKeepsTheOriginalProfileFields() throws Exception {
+        when(mapper.user(7L)).thenReturn(Map.of("id",7L,"username","知识作者","role","student","status","active","points",42));
+        http.perform(get("/api/me").principal(auth)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.id").value(7)).andExpect(jsonPath("$.username").value("知识作者"))
+            .andExpect(jsonPath("$.role").value("student")).andExpect(jsonPath("$.status").value("active"))
+            .andExpect(jsonPath("$.points").value(42));
     }
 }

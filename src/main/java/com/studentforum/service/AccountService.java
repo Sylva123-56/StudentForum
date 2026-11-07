@@ -55,6 +55,10 @@ public class AccountService {
         return new SignedInAccount(id, String.valueOf(found.get("role")), mapper.user(id));
     }
 
+    public Map<String,Object> current(Authentication auth) {
+        return access.current(auth);
+    }
+
     public void profile(Authentication auth, Map<String, Object> input) {
         mapper.profile(access.id(auth), field(input, "school", 100), field(input, "grade", 40), field(input, "major", 100), field(input, "subjectPreference", 100), Boolean.TRUE.equals(input.get("publicSchool")), Boolean.TRUE.equals(input.get("publicGrade")));
     }

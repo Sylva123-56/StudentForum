@@ -79,7 +79,7 @@ public class ForumController {
 
     @GetMapping("/me")
     public Map<String, Object> me(Authentication auth) {
-        return service.current(auth);
+        return accounts.current(auth);
     }
 
     @PutMapping("/me/profile")

@@ -35,7 +35,7 @@ class ForumPaginationTest {
         mapper = mock(ForumMapper.class);
         ForumService service = TestServices.forum(mapper, null);
         controller = new ForumController(service, new AccountService(mapper, new AccountAccessService(mapper), TestServices.points(mapper, null), null),
-                new PostEditService(mapper, service), new ForumQueryService(mapper, new AccountAccessService(mapper), new ForumRepository(null, mapper)),
+                new PostEditService(mapper, service, new AccountAccessService(mapper)), new ForumQueryService(mapper, new AccountAccessService(mapper), new ForumRepository(null, mapper)),
                 TestServices.notifications(mapper, null), TestServices.points(mapper, null), null);
         auth = new UsernamePasswordAuthenticationToken("7", null, List.of());
     }
