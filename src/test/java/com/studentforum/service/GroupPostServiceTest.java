@@ -160,7 +160,7 @@ class GroupPostServiceTest {
 
     @Test void groupDetailKeepsTheTwentyPostSummaryAndOtherFields() {
         when(groups.posts(3, 7L, 20)).thenReturn(List.of(post));
-        var service = new GroupService(accounts, access, posts, groups, "target/group-test-uploads");
+        var service = new GroupService(accounts, access, posts, groups);
         var detail = service.detail(3, auth);
         assertEquals(List.of(post), detail.get("posts"));
         assertEquals(java.util.Set.of("group", "posts", "announcements", "members", "files", "checkins", "membership", "pendingApplication"), detail.keySet());

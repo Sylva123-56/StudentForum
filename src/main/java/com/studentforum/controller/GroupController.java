@@ -2,6 +2,7 @@ package com.studentforum.controller;
 
 import com.studentforum.service.GroupService;
 import com.studentforum.service.GroupPostService;
+import com.studentforum.service.GroupFileService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -14,10 +15,12 @@ import org.springframework.web.multipart.MultipartFile;
 public class GroupController {
     private final GroupService groupService;
     private final GroupPostService posts;
+    private final GroupFileService files;
 
-    public GroupController(GroupService groupService, GroupPostService posts) {
+    public GroupController(GroupService groupService, GroupPostService posts, GroupFileService files) {
         this.groupService = groupService;
         this.posts = posts;
+        this.files = files;
     }
 
     @GetMapping("/rankings")
@@ -142,22 +145,22 @@ public class GroupController {
 
     @GetMapping("/{groupId}/files")
     public List<Map<String, Object>> files(@PathVariable long groupId, Authentication auth) {
-        return groupService.files(groupId,auth);
+        return files.files(groupId,auth);
     }
 
     @PostMapping("/{groupId}/files")
     public void file(Authentication auth, @PathVariable long groupId, @RequestBody Map<String, Object> input) {
-        groupService.file(auth,groupId,input);
+        files.file(auth,groupId,input);
     }
 
     @PostMapping("/{groupId}/files/upload")
     public Map<String, Object> uploadFile(Authentication auth, @PathVariable long groupId, @RequestParam MultipartFile file) throws IOException {
-        return groupService.uploadFile(auth,groupId,file);
+        return files.uploadFile(auth,groupId,file);
     }
 
     @DeleteMapping("/{groupId}/files/{fileId}")
     public void deleteFile(Authentication auth, @PathVariable long groupId, @PathVariable long fileId) {
-        groupService.deleteFile(auth,groupId,fileId);
+        files.deleteFile(auth,groupId,fileId);
     }
 
     @GetMapping("/{groupId}/checkin")

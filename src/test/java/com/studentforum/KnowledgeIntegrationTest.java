@@ -36,6 +36,14 @@ class KnowledgeIntegrationTest {
   JsonNode ok(String method,String path,Object data) throws Exception{var r=request(method,path,data);assertTrue(r.statusCode()>=200&&r.statusCode()<300,()->method+" "+path+" => "+r.statusCode()+" "+r.body());return r.body().isBlank()?json.nullNode():json.readTree(r.body());}
   long register(String name) throws Exception{return ok("POST","/auth/register",Map.of("email",name+suffix+"@example.test","username",name+suffix,"password","Knowledge-Test-2026")).get("id").asLong();}
   void login(String name) throws Exception{ok("POST","/auth/login",Map.of("email",name+suffix+"@example.test","password","Knowledge-Test-2026"));}
+  HttpResponse<String> uploadGroupFile(long group) throws Exception {
+   String csrf = ok("GET", "/csrf", null).get("token").asText();
+   String boundary = "group-file-test-boundary";
+   String body = "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"study.txt\"\r\nContent-Type: text/plain\r\n\r\nGroup file regression.\r\n--" + boundary + "--\r\n";
+   return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/groups/" + group + "/files/upload"))
+     .header("X-XSRF-TOKEN", csrf).header("Content-Type", "multipart/form-data; boundary=" + boundary)
+     .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
+  }
   long upload() throws Exception{
    var csrf=ok("GET","/csrf",null).get("token").asText();String boundary="knowledge-test-boundary";
    String body="--"+boundary+"\r\nContent-Disposition: form-data; name=\"file\"; filename=\"study.txt\"\r\nContent-Type: text/plain\r\n\r\nKnowledge material for integration tests.\r\n--"+boundary+"--\r\n";
@@ -434,6 +442,55 @@ class KnowledgeIntegrationTest {
   assertEquals(0, other.ok("GET", path + "/posts", null).size());
   other.ok("POST", path + "/leave", null);
   assertEquals(403, other.request("GET", path + "/posts", null).statusCode());
+ }
+
+ @Test void groupFileUploadRegistrationAndDeletionKeepPermissionAndStorageBoundaries() throws Exception {
+  long group = owner.ok("POST", "/groups", Map.of("name", "私密文件拆分回归", "visibility", "private", "joinMode", "invite")).get("group").get("id").asLong();
+  String path = "/groups/" + group;
+  assertEquals(403, other.request("GET", path + "/files", null).statusCode());
+  assertEquals(403, other.uploadGroupFile(group).statusCode());
+  var response = owner.uploadGroupFile(group);
+  assertEquals(200, response.statusCode(), response.body());
+  var upload = json.readTree(response.body());
+  String stored = upload.get("path").asText();
+  Path physical = Path.of("target/knowledge-test-images").resolve(stored.substring("/uploads/".length()));
+  assertTrue(Files.exists(physical));
+  assertEquals("Group file regression.", Files.readString(physical));
+  assertEquals(0, owner.ok("GET", path + "/files", null).size());
+  owner.ok("POST", path + "/files", Map.of("name", upload.get("name").asText(), "path", stored, "sizeBytes", upload.get("sizeBytes").asLong(), "allowDownload", false));
+  long file = db.queryForObject("SELECT id FROM study_group_files WHERE group_id=? AND path=?", Long.class, group, stored);
+  owner.ok("POST", path + "/invite", Map.of("userId", otherId));
+  var row = other.ok("GET", path + "/files", null).get(0);
+  assertEquals(file, row.get("id").asLong());
+  assertFalse(row.get("allow_download").asBoolean());
+  assertEquals(Files.size(physical), row.get("size_bytes").asLong());
+  assertEquals(403, other.request("DELETE", path + "/files/" + file, null).statusCode());
+  long second = owner.ok("POST", "/groups", Map.of("name", "文件跨组回归")).get("group").get("id").asLong();
+  assertEquals(404, owner.request("DELETE", "/groups/" + second + "/files/" + file, null).statusCode());
+  assertTrue(Files.exists(physical));
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_files WHERE id=?", Integer.class, file));
+  owner.ok("DELETE", path + "/files/" + file, null);
+  assertFalse(Files.exists(physical));
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM study_group_files WHERE id=?", Integer.class, file));
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_logs WHERE group_id=? AND action='file_delete' AND target_id=?", Integer.class, group, file));
+ }
+
+ @Test void groupFileUploaderAndManagerDeletionKeepTheMetadataContract() throws Exception {
+  long group = owner.ok("POST", "/groups", Map.of("name", "文件管理角色回归", "visibility", "private", "joinMode", "invite")).get("group").get("id").asLong();
+  String path = "/groups/" + group;
+  owner.ok("POST", path + "/invite", Map.of("userId", otherId));
+  other.ok("POST", path + "/files", Map.of("name", "  成员自己的资料  ", "path", "https://example.test/study.txt"));
+  var own = other.ok("GET", path + "/files", null).get(0);
+  assertEquals("成员自己的资料", own.get("name").asText());
+  assertEquals(0, own.get("size_bytes").asLong());
+  assertTrue(own.get("allow_download").asBoolean());
+  other.ok("DELETE", path + "/files/" + own.get("id").asLong(), null);
+  other.ok("POST", path + "/files", Map.of("name", "组长代删资料", "path", "https://example.test/another.txt"));
+  long file = other.ok("GET", path + "/files", null).get(0).get("id").asLong();
+  owner.ok("DELETE", path + "/files/" + file, null);
+  assertEquals(0, owner.ok("GET", path, null).get("files").size());
+  other.ok("POST", path + "/leave", null);
+  assertEquals(403, other.request("GET", path + "/files", null).statusCode());
  }
 
  @Test void messagesKeepPrivacyBlockingAndMembershipBoundaries() throws Exception {
