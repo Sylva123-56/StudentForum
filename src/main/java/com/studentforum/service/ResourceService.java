@@ -1,8 +1,9 @@
 package com.studentforum.service;
 
+import com.studentforum.repository.ResourceRepository;
+
 import java.io.*;
 import java.nio.file.*;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -23,21 +24,19 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class ResourceService {
+    private final ResourceRepository repository;
+    private final AccountAccessService accounts;
     private final KnowledgeService k;
     private final Path directory;
-    public ResourceService(KnowledgeService k,@Value("${forum.knowledge-files:knowledge-files}") String path,@Value("${forum.uploads}") String publicUploads) { this.k=k; directory=Path.of(path).toAbsolutePath().normalize(); if(directory.startsWith(Path.of(publicUploads).toAbsolutePath().normalize()))throw new IllegalArgumentException("Knowledge files must not be stored under public uploads"); }
+    public ResourceService(ResourceRepository repository, AccountAccessService accounts, KnowledgeService k,@Value("${forum.knowledge-files:knowledge-files}") String path,@Value("${forum.uploads}") String publicUploads) { this.repository=repository; this.accounts=accounts; this.k=k; directory=Path.of(path).toAbsolutePath().normalize(); if(directory.startsWith(Path.of(publicUploads).toAbsolutePath().normalize()))throw new IllegalArgumentException("Knowledge files must not be stored under public uploads"); }
     public Map<String,Object> list(Authentication auth,String q,String subject,String grade,String textbook,String exam,boolean mine,boolean favorite,int page) {
         k.check(!mine && !favorite || k.user(auth)>0,"请先登录");
-        String sql="SELECT r.*,u.username,(SELECT COUNT(*) FROM resource_favorites f WHERE f.resource_id=r.id) AS favorite_count,(SELECT COUNT(*) FROM resource_votes v WHERE v.resource_id=r.id) AS like_count FROM resources r JOIN users u ON u.id=r.uploader_id WHERE "+(mine?"r.uploader_id=?":"r.status='published'");
-        List<Object> args=new ArrayList<>(); if(mine)args.add(k.user(auth));
-        for(var entry:Map.of("subject",subject,"grade",grade,"textbook",textbook,"exam",exam).entrySet())if(!entry.getValue().isBlank()){ sql+=" AND r."+entry.getKey()+"=?"; args.add(entry.getValue().trim()); }
-        k.check(q.length()<=100,"关键词过长"); if(!q.isBlank()){sql+=" AND (LOCATE(?,r.title)>0 OR LOCATE(?,r.description)>0 OR LOCATE(?,r.tags)>0)"; args.add(q.trim());args.add(q.trim());args.add(q.trim());}
-        if(favorite){sql+=" AND EXISTS(SELECT 1 FROM resource_favorites f WHERE f.resource_id=r.id AND f.user_id=?)";args.add(k.user(auth));}
-        sql+=" ORDER BY r.id DESC LIMIT 21 OFFSET ?";args.add(k.offset(page)); return k.page(k.db.queryForList(sql,args.toArray()));
+        k.check(q.length()<=100,"关键词过长");
+        return k.page(repository.search(q,subject,grade,textbook,exam,mine,favorite,k.user(auth),k.offset(page)));
     }
     @Transactional
     public Map<String,Object> upload(Authentication auth,MultipartFile file) throws IOException {
-        k.forum.writable(auth); k.check(!file.isEmpty() && file.getSize()<=25_000_000,"文件大小须为 1 字节至 25MB");
+        accounts.writable(auth); k.check(!file.isEmpty() && file.getSize()<=25_000_000,"文件大小须为 1 字节至 25MB");
         String name=Objects.toString(file.getOriginalFilename(),"file").replace((char)92,'_').replaceAll("[\\/\r\n]","_"); k.check(name.length()<=255,"文件名过长");
         String ext=name.substring(name.lastIndexOf('.')+1).toLowerCase(Locale.ROOT);
         k.check(Set.of("jpg","jpeg","png","webp","pdf","txt","doc","docx","xls","xlsx","ppt","pptx","zip").contains(ext),"支持图片、PDF、Office 文档、TXT 和 ZIP");
@@ -47,7 +46,7 @@ public class ResourceService {
             @Override public void afterCompletion(int status) { if(status!=STATUS_COMMITTED)try{Files.deleteIfExists(target);}catch(IOException ignored){} }
         });
         String mime=switch(ext){case "pdf"->"application/pdf";case "png"->"image/png";case "jpg","jpeg"->"image/jpeg";case "webp"->"image/webp";case "txt"->"text/plain";default->"application/octet-stream";};
-        long id=k.insert("INSERT INTO resource_uploads(user_id,file_name,stored_name,mime_type,size_bytes) VALUES(?,?,?,?,?)",k.user(auth),name,stored,mime,bytes.length);
+        long id=repository.insertUpload(k.user(auth),name,stored,mime,bytes.length);
         return Map.of("id",id,"name",name,"sizeBytes",bytes.length);
     }
     public static void validateFile(String ext,byte[] b) throws IOException {
@@ -73,52 +72,51 @@ public class ResourceService {
     }
     @Transactional
     public Map<String,Object> create(Authentication auth,Map<String,Object> input) {
-        k.forum.writable(auth); k.check(Boolean.TRUE.equals(input.get("integrityAccepted")),"请确认版权与学术诚信声明");
+        accounts.writable(auth); k.check(Boolean.TRUE.equals(input.get("integrityAccepted")),"请确认版权与学术诚信声明");
         if(!(input.get("files") instanceof List<?> files) || files.isEmpty() || files.size()>10)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"请选择 1 至 10 个文件");
         long points=k.number(input,"downloadPoints",0); k.check(points>=0 && points<=100,"下载积分须为 0 至 100");
-        long id=k.insert("INSERT INTO resources(uploader_id,title,description,subject,grade,textbook,exam,tags,source,copyright_note,download_points) VALUES(?,?,?,?,?,?,?,?,?,?,?)",k.user(auth),k.text(input,"title",2,160),k.text(input,"description",1,10000),k.text(input,"subject",0,40),k.text(input,"grade",0,40),k.text(input,"textbook",0,80),k.text(input,"exam",0,80),k.text(input,"tags",0,500),k.text(input,"source",1,255),k.text(input,"copyrightNote",1,500),points);
+        long id=repository.insertResource(k.user(auth),k.text(input,"title",2,160),k.text(input,"description",1,10000),k.text(input,"subject",0,40),k.text(input,"grade",0,40),k.text(input,"textbook",0,80),k.text(input,"exam",0,80),k.text(input,"tags",0,500),k.text(input,"source",1,255),k.text(input,"copyrightNote",1,500),points);
         Set<Long> used=new HashSet<>();
-        for(Object value:files){k.check(value instanceof Number || value instanceof String,"文件 ID 无效");long upload=k.number(Map.of("id",value),"id",0); k.check(used.add(upload),"文件重复"); var f=k.required("SELECT * FROM resource_uploads WHERE id=? AND user_id=? AND resource_id IS NULL FOR UPDATE",upload,k.user(auth));
-            k.db.update("INSERT INTO resource_files(resource_id,file_name,file_path,mime_type,size_bytes) VALUES(?,?,?,?,?)",id,f.get("file_name"),f.get("stored_name"),f.get("mime_type"),f.get("size_bytes")); k.db.update("UPDATE resource_uploads SET resource_id=? WHERE id=?",id,upload);
+        for(Object value:files){k.check(value instanceof Number || value instanceof String,"文件 ID 无效");long upload=k.number(Map.of("id",value),"id",0); k.check(used.add(upload),"文件重复"); var f=k.required(repository.lockUnusedUpload(upload,k.user(auth)));
+            repository.attachFile(id,f); repository.claimUpload(id,upload);
         }
         return Map.of("id",id,"status","pending");
     }
     public Map<String,Object> detail(Authentication auth,long id) {
-        var r=k.resource(auth,id); r.put("files",k.db.queryForList("SELECT id,file_name,size_bytes,mime_type FROM resource_files WHERE resource_id=?",id));
-        r.put("comments",k.db.queryForList("SELECT c.*,u.username FROM resource_comments c JOIN users u ON u.id=c.user_id WHERE c.resource_id=? ORDER BY c.id DESC LIMIT 100",id));
-        r.put("favorited",k.row("SELECT 1 FROM resource_favorites WHERE resource_id=? AND user_id=?",id,k.user(auth))!=null); r.put("liked",k.row("SELECT 1 FROM resource_votes WHERE resource_id=? AND user_id=?",id,k.user(auth))!=null);
-        r.put("favorite_count",k.db.queryForObject("SELECT COUNT(*) FROM resource_favorites WHERE resource_id=?",Long.class,id)); r.put("like_count",k.db.queryForObject("SELECT COUNT(*) FROM resource_votes WHERE resource_id=?",Long.class,id));return r;
+        var r=k.resource(auth,id); r.put("files",repository.files(id));
+        r.put("comments",repository.comments(id));
+        r.put("favorited",repository.favoriteBy(id,k.user(auth))!=null); r.put("liked",repository.likeBy(id,k.user(auth))!=null);
+        r.put("favorite_count",repository.favoriteCount(id)); r.put("like_count",repository.likeCount(id));return r;
     }
     @Transactional
     public Map<String,Object> download(Authentication auth,long id) {
-        k.forum.writable(auth); k.resource(auth,id); var r=k.required("SELECT * FROM resources WHERE id=? FOR UPDATE",id); k.check("published".equals(r.get("status")),"仅已发布资料可以下载");
-        var files=k.db.queryForList("SELECT id,file_name,size_bytes FROM resource_files WHERE resource_id=?",id); k.check(!files.isEmpty(),"资料没有文件");
+        accounts.writable(auth); k.resource(auth,id); var r=k.required(repository.lockResource(id)); k.check("published".equals(r.get("status")),"仅已发布资料可以下载");
+        var files=repository.downloadFiles(id); k.check(!files.isEmpty(),"资料没有文件");
         long me=k.user(auth),cost=k.n(r,"download_points");
         // Serialize on the resource row: concurrent retries charge once, later downloads remain free.
-        if(me!=k.n(r,"uploader_id") && cost>0 && k.row("SELECT id FROM resource_downloads WHERE resource_id=? AND user_id=? LIMIT 1",id,me)==null){
-            if(k.db.update("UPDATE users SET points=points-? WHERE id=? AND points>=?",cost,me,cost)!=1)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"积分不足");
-            k.db.update("INSERT INTO point_logs(user_id,action,points,balance_after,ref_type,ref_id) SELECT id,'resource_download',?,points,'resource',? FROM users WHERE id=?",-cost,id,me);
+        if(me!=k.n(r,"uploader_id") && cost>0 && repository.downloadBy(id,me)==null){
+            if(repository.chargeDownload(cost,me)!=1)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"积分不足");
+            repository.recordDownloadCharge(cost,id,me);
         }
-        k.db.update("INSERT INTO resource_downloads(resource_id,user_id) VALUES(?,?)",id,me);k.db.update("UPDATE resources SET download_count=download_count+1 WHERE id=?",id);
+        repository.recordDownload(id,me);repository.incrementDownloads(id);
         return Map.of("files",files);
     }
     public ResponseEntity<FileSystemResource> file(Authentication auth,long id,long fileId) throws IOException {
         var r=k.resource(auth,id); long me=k.user(auth);
         boolean privileged=me>0 && (me==k.n(r,"uploader_id") || k.manager(auth,-1));
-        if(!privileged && (!"published".equals(r.get("status")) || me==0 || k.row("SELECT id FROM resource_downloads WHERE resource_id=? AND user_id=? LIMIT 1",id,me)==null))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"请先点击下载资料");
-        var f=k.required("SELECT * FROM resource_files WHERE id=? AND resource_id=?",fileId,id);
+        if(!privileged && (!"published".equals(r.get("status")) || me==0 || repository.downloadBy(id,me)==null))throw new ResponseStatusException(HttpStatus.FORBIDDEN,"请先点击下载资料");
+        var f=k.required(repository.file(fileId,id));
         Path target=directory.resolve(String.valueOf(f.get("file_path"))).normalize(); if(!target.startsWith(directory) || !Files.isRegularFile(target))throw new ResponseStatusException(HttpStatus.NOT_FOUND,"文件不存在");
         return ResponseEntity.ok().header("X-Content-Type-Options","nosniff").header(HttpHeaders.CACHE_CONTROL,"no-store").header(HttpHeaders.CONTENT_DISPOSITION,ContentDisposition.attachment().filename(String.valueOf(f.get("file_name")),java.nio.charset.StandardCharsets.UTF_8).build().toString()).contentType(MediaType.APPLICATION_OCTET_STREAM).contentLength(Files.size(target)).body(new FileSystemResource(target));
     }
     @Transactional
     public void toggle(Authentication auth,long id,String action,Map<String,Object> input) {
-        k.forum.writable(auth);var r=k.resource(auth,id);k.check("published".equals(r.get("status")),"资料尚未发布");String table=action.equals("favorite")?"resource_favorites":"resource_votes";
-        if(Boolean.TRUE.equals(input.get("active")))k.db.update("INSERT IGNORE INTO "+table+"(resource_id,user_id) VALUES(?,?)",id,k.user(auth));else k.db.update("DELETE FROM "+table+" WHERE resource_id=? AND user_id=?",id,k.user(auth));
+        accounts.writable(auth);var r=k.resource(auth,id);k.check("published".equals(r.get("status")),"资料尚未发布");repository.toggleInteraction(id,k.user(auth),action.equals("favorite"),Boolean.TRUE.equals(input.get("active")));
     }
-    public void comment(Authentication auth,long id,Map<String,Object> input){k.forum.writable(auth);k.check("published".equals(k.resource(auth,id).get("status")),"资料尚未发布");k.db.update("INSERT INTO resource_comments(resource_id,user_id,content) VALUES(?,?,?)",id,k.user(auth),k.text(input,"content",1,1000));}
-    public void report(Authentication auth,long id,Map<String,Object> input){k.forum.writable(auth);k.resource(auth,id);long count=Objects.requireNonNullElse(k.db.queryForObject("SELECT COUNT(*) FROM reports WHERE reporter_id=? AND created_at>=CURRENT_DATE",Long.class,k.user(auth)),0L);k.check(count<5,"今日举报次数已达上限");k.db.update("INSERT INTO reports(reporter_id,target_type,target_id,reason,description) VALUES(?,'resource',?,?,?)",k.user(auth),id,k.text(input,"reason",1,40),k.text(input,"description",0,500));}
-    public List<Map<String,Object>> downloads(Authentication auth){return k.db.queryForList("SELECT d.*,r.title FROM resource_downloads d JOIN resources r ON r.id=d.resource_id WHERE d.user_id=? ORDER BY d.id DESC LIMIT 100",k.forum.id(auth));}
-    public Map<String,Object> admin(Authentication auth,int page){k.forum.admin(auth);return k.page(k.db.queryForList("SELECT r.*,u.username FROM resources r JOIN users u ON u.id=r.uploader_id ORDER BY r.status='pending' DESC,r.id DESC LIMIT 21 OFFSET ?",k.offset(page)));}
+    public void comment(Authentication auth,long id,Map<String,Object> input){accounts.writable(auth);k.check("published".equals(k.resource(auth,id).get("status")),"资料尚未发布");repository.addComment(id,k.user(auth),k.text(input,"content",1,1000));}
+    public void report(Authentication auth,long id,Map<String,Object> input){accounts.writable(auth);k.resource(auth,id);long count=Objects.requireNonNullElse(repository.dailyReportCount(k.user(auth)),0L);k.check(count<5,"今日举报次数已达上限");repository.report(k.user(auth),id,k.text(input,"reason",1,40),k.text(input,"description",0,500));}
+    public List<Map<String,Object>> downloads(Authentication auth){return repository.downloads(accounts.id(auth));}
+    public Map<String,Object> admin(Authentication auth,int page){accounts.admin(auth);return k.page(repository.adminResources(k.offset(page)));}
     @Transactional
-    public void moderate(Authentication auth,long id,Map<String,Object> input){k.forum.admin(auth);k.required("SELECT id FROM resources WHERE id=?",id);String status=k.choice(input,"status","pending","pending","published","rejected");String note=k.text(input,"note",1,500);k.db.update("UPDATE resources SET status=? WHERE id=?",status,id);k.audit(auth,"resource_"+status,"resource",id,note);}
+    public void moderate(Authentication auth,long id,Map<String,Object> input){accounts.admin(auth);k.required(repository.findId(id));String status=k.choice(input,"status","pending","pending","published","rejected");String note=k.text(input,"note",1,500);repository.setStatus(status,id);k.audit(auth,"resource_"+status,"resource",id,note);}
 }

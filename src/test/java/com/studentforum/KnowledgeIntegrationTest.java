@@ -58,6 +58,17 @@ class KnowledgeIntegrationTest {
   assertEquals(404,other.request("POST","/resources",Map.of("title","盗用别人的文件","description","描述","source","来源","copyrightNote","授权","integrityAccepted",true,"files",List.of(upload))).statusCode());
   assertTrue(other.ok("GET","/resources/downloads",null).size()>=2);
  }
+ @Test void failedResourceCreationRollsBackPreviouslyClaimedUploads() throws Exception {
+  long owned=owner.upload(), foreign=other.upload();
+  String title="资料创建回滚-"+UUID.randomUUID();
+  var input=Map.of("title",title,"description","第二个文件越权时必须回滚第一个文件的认领",
+    "source","原创","copyrightNote","允许个人学习使用","integrityAccepted",true,"files",List.of(owned,foreign));
+  assertEquals(404,owner.request("POST","/resources",input).statusCode());
+  assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM resources WHERE title=?",Integer.class,title));
+  assertNull(db.queryForObject("SELECT resource_id FROM resource_uploads WHERE id=?",Long.class,owned));
+  assertNull(db.queryForObject("SELECT resource_id FROM resource_uploads WHERE id=?",Long.class,foreign));
+  assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM resource_files f JOIN resource_uploads u ON u.stored_name=f.file_path WHERE u.id=?",Integer.class,owned));
+ }
  @Test void resourceMetadataMigrationRepairsLegacySchema() throws Exception{
   assertTrue(db.queryForObject("SELECT DATABASE()",String.class).toLowerCase(Locale.ROOT).contains("knowledge_test"));
   db.execute("ALTER TABLE resources DROP COLUMN exam");db.execute("ALTER TABLE resources DROP COLUMN textbook");

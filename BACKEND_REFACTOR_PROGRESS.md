@@ -1,11 +1,11 @@
 # 后端重构进度记录
 
-更新日期：2026-11-05  
-代码分支：`codex/rebuild`；最新提交为 `5a73798`，已推送，远端 `origin/codex/rebuild` 指向此提交；提交与推送状态见第四节
+更新日期：2026-11-07  
+代码分支：`codex/rebuild`；按模块验证、提交并推送，最新提交以 `git log -1` 为准；历史提交与推送状态见第四节
 
 目标：改善学习与维护体验，逐步形成 Controller → Service → Repository/Mapper → 数据库的分层结构。
 
-> 当前状态：共享能力、论坛、徽章、学习领域、小组、社交及内容工作流的数据访问迁移，以及错题、图片和 Wiki 的本批 Repository 迁移，均已分阶段提交并推送。`KnowledgeService` 的详情读取、访问检查、审计和通用 SQL 入口，以及资料、合集/专栏等模块仍待整理，**尚未完成全部后端分层重构**。提交前重跑全量测试，181 项全部通过（含 21 项集成测试）。重构工作按用户要求暂停，工作区无未提交的代码改动。
+> 当前状态：2026-11-07 已恢复重构。资料写入、下载及治理 SQL 已迁入 `ResourceRepository`，资料详情共享查询和访问策略仍经 `KnowledgeService`。本轮全量测试 **188 项通过（含 22 项集成测试），无失败、错误或跳过**；合集/专栏和知识共享服务的剩余迁移继续进行，尚未宣称完成全部后端重构。
 
 ## 一、阶段成果与当前改动
 
@@ -55,7 +55,8 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 | 笔记 | 列表、创建、更新、修订记录和编辑行锁移至 `NoteRepository` | 详情读取及其访问检查仍经 `KnowledgeService.note`，其中仍有 SQL |
 | 错题及图片 | 本批列表、写入、复习、统计、复习计划和图片元数据 SQL 移至 `MistakeRepository`、`MistakeImageRepository` | 错题详情、成员访问检查等仍经 `KnowledgeService` |
 | Wiki | 本批列表、编辑行锁、修订和治理查询移至 `WikiRepository`，显式注入 `AccountAccessService` | 审计及部分校验仍依赖 `KnowledgeService` |
-| 资料、合集/专栏及知识共享服务 | 保留已有 HTTP/Service 分离成果 | `ResourceService`、`CollectionService` 及 `KnowledgeService` 仍有 SQL 和字段穿透访问 |
+| 资料 | 列表、文件认领、下载扣分、互动和治理 SQL 已进入 `ResourceRepository`，显式依赖 `AccountAccessService` | 共享详情读取与审计仍经 `KnowledgeService` |
+| 合集/专栏及知识共享服务 | 保留已有 HTTP/Service 分离成果 | `CollectionService` 及 `KnowledgeService` 仍有 SQL 和字段穿透访问 |
 
 这里的“下沉”指按业务含义建立 Repository 方法，而不是将 JdbcTemplate 再包装成一个接收任意 SQL 的通用工具。
 
@@ -135,6 +136,13 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 最近一次全量报告为 **181 项全部通过，0 失败、0 错误、0 跳过，含 21 项独立数据库集成测试**。本批新增 5 项均为单元测试，集成测试数量未增加。
 - 提交前重跑全量测试通过后，本批代码已提交为 `5a73798` 并推送；`git ls-remote` 确认远端分支指向该提交。
 
+### 12. 2026-11-07 资料数据访问迁移
+
+- 新增 `ResourceRepository`：资料搜索、上传元数据、文件认领、评论/收藏/点赞、下载与扣分日志、举报及后台治理均使用具名方法；`ResourceService` 不再调用 SQL 或穿透 `k.db` / `k.forum`。
+- 保留资料下载行锁、首次扣费与重复下载免费语义、积分不足校验、文件归属行锁、路径校验、回滚文件清理和审计事务。
+- 新增 6 项仓库回归和 1 项真实 HTTP 回归；后一用例确认创建资料时第二个文件越权会回滚资料行、第一个文件的认领和关联文件行。
+- Java 21 + 专用 MySQL 26.7 实例上重跑 `mvn -q test`，**188 项通过，含 22 项集成测试，无失败、错误或跳过**；日志 `target/resource-full-test.log`。未触碰正常业务库，MySQL 8 验证边界仍保留。
+
 ## 二、尚未完成的部分
 
 | 优先级 | 待办 | 完成标准 |
@@ -183,7 +191,7 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 
 ## 四、提交与推送记录
 
-本次推送后执行 `git ls-remote origin refs/heads/codex/rebuild`，远端分支指向 `5a73798`，即下表全部提交均已在远端。
+2026-11-05 推送后曾确认远端包含 `5a73798`；随后文档提交 `607bc62` 也已推送。本轮按模块继续提交，推送结果逐批核实，不以本地提交代替远端成功。
 
 | 提交 | 内容 | 提交 / 推送状态 |
 | --- | --- | --- |
@@ -192,11 +200,11 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 | `4ee0879` | 帖子与学习计划规则封装，帖子编辑/删除 Service 与对应测试 | 历史记录已推送；属于本地跟踪分支历史 |
 | `95458d2` | 共享服务、论坛、打卡和专注数据访问拆分 | 已提交；本地 reflog 记录推送成功 |
 | `17e2218` | 学习计划、自习室与学习后台 Repository 边界 | 已提交；本地 reflog 记录推送成功 |
-| `8d28c64` | 小组与社交数据访问隔离 | 已提交；本地 reflog 记录推送成功，当前本地 `origin/codex/rebuild` 指向此提交 |
+| `8d28c64` | 小组与社交数据访问隔离 | 已提交；本地 reflog 记录推送成功 |
 | `a021ef2` | 投票、草稿、申诉领域服务及定时发布拆分 | 已提交并推送（`8d28c64..a021ef2`） |
 | `5a73798` | 错题、图片与 Wiki Repository 迁移及 5 项回归测试 | 已提交并推送（`a021ef2..5a73798`），`git ls-remote` 已确认 |
 
-本轮用户已明确授权每完成一部分即提交并推送；后续又要求完成当前小任务后暂停。本次已推送 `a021ef2`，重跑测试后提交并推送错题、图片与 Wiki 本批改动，随后按用户要求更新本文档并暂停，未开始下一模块。
+本轮用户已明确授权每完成一部分即提交并推送；后续又要求完成当前小任务后暂停。2026-11-05 已完成错题、图片与 Wiki 后暂停；2026-11-07 用户要求继续，现按模块验证、提交并推送。
 
 ## 五、恢复工作后的建议顺序
 
