@@ -2,6 +2,7 @@ package com.studentforum.controller;
 
 import com.studentforum.service.StudyPlanService;
 import com.studentforum.service.StudyPlanTemplateService;
+import com.studentforum.service.StudyPlanTaskService;
 import java.util.Map;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -10,12 +11,14 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/plans")
 public class StudyPlanController {
     private final StudyPlanService studyPlanService;
-
     private final StudyPlanTemplateService templates;
+    private final StudyPlanTaskService tasks;
 
-    public StudyPlanController(StudyPlanService studyPlanService, StudyPlanTemplateService templates) {
+    public StudyPlanController(StudyPlanService studyPlanService, StudyPlanTemplateService templates,
+                               StudyPlanTaskService tasks) {
         this.studyPlanService = studyPlanService;
         this.templates = templates;
+        this.tasks = tasks;
     }
 
     @GetMapping
@@ -57,17 +60,17 @@ public class StudyPlanController {
 
     @PostMapping("/{planId}/tasks")
     public Map<String, Object> addTask(Authentication auth, @PathVariable long planId, @RequestBody Map<String, Object> input) {
-        return studyPlanService.addTask(auth,planId,input);
+        return tasks.addTask(auth,planId,input);
     }
 
     @PatchMapping("/{planId}/tasks/{taskId}")
     public Map<String, Object> updateTask(Authentication auth, @PathVariable long planId, @PathVariable long taskId, @RequestBody Map<String, Object> input) {
-        return studyPlanService.updateTask(auth,planId,taskId,input);
+        return tasks.updateTask(auth,planId,taskId,input);
     }
 
     @DeleteMapping("/{planId}/tasks/{taskId}")
     public Map<String, Object> deleteTask(Authentication auth, @PathVariable long planId, @PathVariable long taskId) {
-        return studyPlanService.deleteTask(auth,planId,taskId);
+        return tasks.deleteTask(auth,planId,taskId);
     }
 
     @GetMapping("/templates")

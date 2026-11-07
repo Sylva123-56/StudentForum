@@ -18,6 +18,7 @@ import com.studentforum.service.FocusService;
 import com.studentforum.controller.StudyPlanController;
 import com.studentforum.service.StudyPlanService;
 import com.studentforum.service.StudyPlanTemplateService;
+import com.studentforum.service.StudyPlanTaskService;
 import com.studentforum.controller.StudyRoomController;
 import com.studentforum.service.StudyRoomService;
 import com.studentforum.mapper.ForumMapper;
@@ -73,7 +74,9 @@ class StudyToolsTest {
         focus = new FocusController(new FocusService(new FocusRepository(db), accounts, tools, roomAccess, studySettings, rewards));
         rooms = new StudyRoomController(new StudyRoomService(new StudyRoomRepository(db), accounts, tools, preferences, roomAccess, badges));
         var templates = new StudyPlanTemplateService(new StudyPlanRepository(db), accounts, tools, preferences, progress);
-        plans = new StudyPlanController(new StudyPlanService(new StudyPlanRepository(db), accounts, tools, preferences, studySettings, rewards, progress, templates), templates);
+        var planService = new StudyPlanService(new StudyPlanRepository(db), accounts, tools, preferences, progress, templates);
+        var tasks = new StudyPlanTaskService(new StudyPlanRepository(db), accounts, tools, studySettings, rewards, progress, planService);
+        plans = new StudyPlanController(planService, templates, tasks);
         auth = new UsernamePasswordAuthenticationToken(String.valueOf(ME), null, List.of());
 
         // 默认查询返回空集：只有测试显式桩过的 SQL 才有数据，避免"碰巧通过"

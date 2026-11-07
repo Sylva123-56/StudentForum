@@ -43,13 +43,15 @@ Java 入口是 `src/main/java/com/studentforum/ForumApplication.java`，从这�
 
 **学习计划模板：** 模板分类、创建、计划另存模板和删除由 `StudyPlanTemplateService` 负责；`StudyPlanService.createPlan/applyTemplateEndpoint` 仍持有生成计划的外层事务，模板任务展开复用同一权限校验并加入该事务。两个创建入口都不能使用他人的私有模板，失败不会留下半条计划或任务。
 
+**学习计划任务：** `StudyPlanController` 的任务增删改直接进入 `StudyPlanTaskService`，父任务汇总、计划状态、积分/徽章和可选打卡仍在同一外层事务中完成；响应详情复用 `StudyPlanService.plan`。任务取消后重勾通过既有积分记录去重，不再重复发任务积分；并发奖励唯一性和上限仍需专项验证。
+
 **知识模块的完整链路：** 笔记详情 `NoteService.detail` → `KnowledgeService.note` → `KnowledgeRepository.note`；共享服务负责可见性，仓库只查询投影。`KnowledgeService` 没有 JDBC、论坛发布服务或任意 SQL 入口。资料流程 `ResourceController` → `ResourceService` → `ResourceRepository` 保留私有文件访问、文件认领行锁和下载首次扣分事务；合集/专栏 `CollectionController` → `CollectionService` → `CollectionRepository` 保留条目计数、排序、关注计数和作者草稿权限。跨类型收录的可见性仍统一调用 `KnowledgeService.item`，不复制安全策略。
 
 **事务与文件：** 帖子硬删除先处理数据库，上传文件仅在最外层事务提交后清理；如果事务回滚，仍被帖子引用的文件会保留。真实 MySQL 集成测试包含回滚与提交两条路径，不能只通过检查 `@Transactional` 注解来验证这种行为。
 
 **对象与 DTO 不同：** `ModerationScope` 封装版主可见板块，`Post` 封装作者编辑与采纳规则，`StudyPlanPeriod` 校验计划日期；`AdminPostStatusRequest` 只负责接收 `{ "status": "hidden" }`。不必为每个数据表建立类，也不要为只有一个实现的 Service 强行添加接口。新增功能可先找到同领域 Controller，再沿 Service → Repository/Mapper 查找原有约束与 SQL。
 
-**渐进迁移边界：** 现有接口、字段名、权限与数据库表不变。当前 Service 不再直接持有 JdbcTemplate 或编写 SQL，数据访问进入具名 Repository / MyBatis Mapper；但大量请求/响应仍保留 `Map<String, Object>`，长业务类和类型化继续按领域渐进整理，不一次性改写接口结构。权限直接复用 `AccountAccessService`，内容规则复用 `ContentRules`；`ForumService` 不再提供旧权限/校验转发，仍负责真实的论坛业务编排。
+**渐进迁移边界：** 现有接口、字段名与数据库表不变；本轮只修补已验证的私有模板访问遗漏与任务取消后重勾重复发分，不放宽原有权限。当前 Service 不再直接持有 JdbcTemplate 或编写 SQL，数据访问进入具名 Repository / MyBatis Mapper；但大量请求/响应仍保留 `Map<String, Object>`，长业务类和类型化继续按领域渐进整理，不一次性改写接口结构。权限直接复用 `AccountAccessService`，内容规则复用 `ContentRules`；`ForumService` 不再提供旧权限/校验转发，仍负责真实的论坛业务编排。
 
 ## 当前边界
 

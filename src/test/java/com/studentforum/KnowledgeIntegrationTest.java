@@ -269,6 +269,51 @@ class KnowledgeIntegrationTest {
   assertEquals("archived", archived.get("status").asText());
  }
 
+ @Test void taskUpdatesRollBackEarlierFieldsAndRejectCrossPlanIds() throws Exception {
+  var plan = owner.ok("POST", "/plans", Map.of("title", "任务更新事务回归", "tasks", List.of(Map.of("title", "原任务标题", "dueDate", "2026-11-08"))));
+  long planId = plan.get("id").asLong(), taskId = plan.get("tasks").get(0).get("id").asLong();
+  assertEquals(400, owner.request("PATCH", "/plans/" + planId + "/tasks/" + taskId, Map.of("title", "不应保存的标题", "dueDate", "2026-11-09", "status", "invalid")).statusCode());
+  assertEquals("原任务标题", db.queryForObject("SELECT title FROM study_tasks WHERE id=?", String.class, taskId));
+  assertEquals("2026-11-08", db.queryForObject("SELECT CAST(due_date AS CHAR) FROM study_tasks WHERE id=?", String.class, taskId));
+  assertEquals("pending", db.queryForObject("SELECT status FROM study_tasks WHERE id=?", String.class, taskId));
+  assertEquals(404, other.request("PATCH", "/plans/" + planId + "/tasks/" + taskId, Map.of("status", "done")).statusCode());
+  assertEquals(404, other.request("DELETE", "/plans/" + planId + "/tasks/" + taskId, null).statusCode());
+  long second = owner.ok("POST", "/plans", Map.of("title", "另一份计划")).get("id").asLong();
+  assertEquals(404, owner.request("PATCH", "/plans/" + second + "/tasks/" + taskId, Map.of("title", "不能跨计划修改")).statusCode());
+  assertEquals(404, owner.request("DELETE", "/plans/" + second + "/tasks/" + taskId, null).statusCode());
+  assertEquals(404, owner.request("POST", "/plans/" + second + "/tasks", Map.of("title", "不能跨计划嵌套", "parentId", taskId)).statusCode());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_tasks WHERE plan_id=?", Integer.class, planId));
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM study_tasks WHERE plan_id=?", Integer.class, second));
+ }
+
+ @Test void taskCompletionKeepsAutomaticCheckinAndRewardDeduplication() throws Exception {
+  Client student = new Client();
+  long user = student.register("任务联动回归");
+  long goal = student.ok("POST", "/checkin/goals", Map.of("title", "计划任务打卡目标", "subject", "数学", "targetMinutes", 25, "visibility", "private")).get("id").asLong();
+  var plan = student.ok("POST", "/plans", Map.of("title", "任务奖励与打卡回归", "subject", "数学", "tasks", List.of(Map.of("title", "先复习"), Map.of("title", "再练习"))));
+  long planId = plan.get("id").asLong(), first = plan.get("tasks").get(0).get("id").asLong(), second = plan.get("tasks").get(1).get("id").asLong();
+  var completed = student.ok("PATCH", "/plans/" + planId + "/tasks/" + first, Map.of("status", "done", "checkin", true));
+  long checkin = completed.get("checkin").get("id").asLong();
+  assertEquals("active", completed.get("status").asText());
+  var stored = db.queryForMap("SELECT source,visibility,duration_minutes,plan_id,task_id FROM checkins WHERE id=?", checkin);
+  assertEquals("plan", stored.get("source"));
+  assertEquals("private", stored.get("visibility"));
+  assertEquals(25, ((Number) stored.get("duration_minutes")).intValue());
+  assertEquals(planId, ((Number) stored.get("plan_id")).longValue());
+  assertEquals(first, ((Number) stored.get("task_id")).longValue());
+  assertTrue(student.ok("PATCH", "/plans/" + planId + "/tasks/" + first, Map.of("status", "done", "checkin", true)).get("checkin").isNull());
+  var finished = student.ok("PATCH", "/plans/" + planId + "/tasks/" + second, Map.of("status", "done", "checkin", true));
+  assertEquals("completed", finished.get("status").asText());
+  assertEquals(100, finished.get("progress").get("percent").asInt());
+  assertTrue(finished.get("checkin").isNull());
+  student.ok("PATCH", "/plans/" + planId + "/tasks/" + second, Map.of("status", "pending"));
+  student.ok("PATCH", "/plans/" + planId + "/tasks/" + second, Map.of("status", "done", "checkin", true));
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM checkins WHERE goal_id=?", Integer.class, goal));
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM point_logs WHERE user_id=? AND ref_type='study_task' AND ref_id=?", Integer.class, user, first));
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM point_logs WHERE user_id=? AND ref_type='study_task' AND ref_id=?", Integer.class, user, second));
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM point_logs WHERE user_id=? AND ref_type='study_plan' AND ref_id=?", Integer.class, user, planId));
+ }
+
  @Test void templateCreationEntryPointsKeepPrivacyAndRollBackPartialPlans() throws Exception {
   long template = owner.ok("POST", "/plans/templates", Map.of("title", "模板事务回归", "visibility", "private", "tasks", List.of("模板任务|第 1 天"))).get("id").asLong();
   assertEquals(400, other.request("POST", "/plans/templates/" + template + "/apply", null).statusCode());

@@ -158,6 +158,10 @@ public class StudyPlanRepository {
         db.update("UPDATE study_tasks SET status=?,completed_at=? WHERE id=?", status, completedAt, taskId);
     }
 
+    public Map<String, Object> taskReward(long user, long taskId) {
+        return db.queryForList("SELECT 1 FROM point_logs WHERE user_id=? AND action='plan_task' AND ref_type='study_task' AND ref_id=?", user, taskId).stream().findFirst().orElse(null);
+    }
+
     public Map<String, Object> planReward(long user, long planId) {
         return db.queryForList("SELECT 1 FROM point_logs WHERE user_id=? AND ref_type='study_plan' AND ref_id=?", user, planId).stream().findFirst().orElse(null);
     }

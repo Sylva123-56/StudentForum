@@ -30,6 +30,11 @@ class StudyRepositoryTest {
         verify(db).queryForList(contains("t.owner_id<>? AND t.visibility='shared' AND subject=?"), eq(7L), eq("数学"));
     }
 
+    @Test void taskRewardDeduplicationBindsUserAndTaskWithTheExactRewardKind() {
+        new StudyPlanRepository(db).taskReward(7, 8);
+        verify(db).queryForList("SELECT 1 FROM point_logs WHERE user_id=? AND action='plan_task' AND ref_type='study_task' AND ref_id=?", 7L, 8L);
+    }
+
     @Test void roomListsKeepPublicAndMemberScopesSeparate() {
         var repository = new StudyRoomRepository(db);
         repository.rooms(null, "all");
