@@ -62,7 +62,7 @@ class GroupAccessServiceTest {
         for (String role : List.of("owner", "admin")) {
             var member = Map.<String, Object>of("role", role);
             when(groups.membership(3, 7)).thenReturn(List.of(member));
-            access.requireManager(3, 7);
+            assertSame(member, access.requireManager(3, 7));
             assertSame(member, access.requireMember(3, 7));
         }
     }

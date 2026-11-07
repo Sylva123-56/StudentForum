@@ -3,6 +3,7 @@ package com.studentforum.controller;
 import com.studentforum.service.GroupService;
 import com.studentforum.service.GroupPostService;
 import com.studentforum.service.GroupFileService;
+import com.studentforum.service.GroupMembershipService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -16,11 +17,13 @@ public class GroupController {
     private final GroupService groupService;
     private final GroupPostService posts;
     private final GroupFileService files;
+    private final GroupMembershipService membership;
 
-    public GroupController(GroupService groupService, GroupPostService posts, GroupFileService files) {
+    public GroupController(GroupService groupService, GroupPostService posts, GroupFileService files, GroupMembershipService membership) {
         this.groupService = groupService;
         this.posts = posts;
         this.files = files;
+        this.membership = membership;
     }
 
     @GetMapping("/rankings")
@@ -65,37 +68,37 @@ public class GroupController {
 
     @PostMapping("/{groupId}/join")
     public Map<String, Object> join(Authentication auth, @PathVariable long groupId) {
-        return groupService.join(auth,groupId);
+        return membership.join(auth,groupId);
     }
 
     @PostMapping("/{groupId}/apply")
     public Map<String, Object> apply(Authentication auth, @PathVariable long groupId, @RequestBody(required = false) Map<String, Object> input) {
-        return groupService.apply(auth,groupId,input);
+        return membership.apply(auth,groupId,input);
     }
 
     @PostMapping("/{groupId}/invite")
     public void invite(Authentication auth, @PathVariable long groupId, @RequestBody Map<String, Object> input) {
-        groupService.invite(auth,groupId,input);
+        membership.invite(auth,groupId,input);
     }
 
     @PostMapping("/{groupId}/leave")
     public void leave(Authentication auth, @PathVariable long groupId) {
-        groupService.leave(auth,groupId);
+        membership.leave(auth,groupId);
     }
 
     @GetMapping("/{groupId}/members")
     public List<Map<String, Object>> memberList(@PathVariable long groupId, Authentication auth) {
-        return groupService.memberList(groupId,auth);
+        return membership.memberList(groupId,auth);
     }
 
     @PatchMapping("/{groupId}/members/{userId}")
     public void memberRole(Authentication auth, @PathVariable long groupId, @PathVariable long userId, @RequestBody Map<String, Object> input) {
-        groupService.memberRole(auth,groupId,userId,input);
+        membership.memberRole(auth,groupId,userId,input);
     }
 
     @DeleteMapping("/{groupId}/members/{userId}")
     public void removeMember(Authentication auth, @PathVariable long groupId, @PathVariable long userId) {
-        groupService.removeMember(auth,groupId,userId);
+        membership.removeMember(auth,groupId,userId);
     }
 
     @GetMapping("/{groupId}/posts")
@@ -195,12 +198,12 @@ public class GroupController {
 
     @GetMapping("/{groupId}/join-requests")
     public List<Map<String, Object>> requests(Authentication auth, @PathVariable long groupId) {
-        return groupService.requests(auth,groupId);
+        return membership.requests(auth,groupId);
     }
 
     @PatchMapping("/{groupId}/join-requests/{requestId}")
     public void reviewRequest(Authentication auth, @PathVariable long groupId, @PathVariable long requestId, @RequestBody Map<String, Object> input) {
-        groupService.reviewRequest(auth,groupId,requestId,input);
+        membership.reviewRequest(auth,groupId,requestId,input);
     }
 
     @GetMapping("/admin")

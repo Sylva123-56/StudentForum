@@ -6,7 +6,7 @@
 
 目标：改善学习与维护体验，逐步形成 Controller → Service → Repository/Mapper → 数据库的分层结构。
 
-> 当前状态：2026-11-07 已完成上一轮剩余的资料、合集/专栏和知识共享 SQL 下沉，并迁移调用方、删除论坛旧权限/校验转发。代码按模块测试、提交并推送。随后继续拆出学习计划模板、任务业务，统一两个创建入口的私有模板权限，并修复取消后重勾重复发任务积分。随后将小组帖子、文件业务与共用权限检查拆出，保持原有路由、响应和事务语义。最新全量 **299 项通过（含 31 项真实 MySQL + HTTP 集成测试），无失败、错误或跳过**。核心数据访问分层已贯通，但 Map 类型化、大业务类细分、所有并发边界和部署同版本 MySQL 8 验证尚未全部完成。
+> 当前状态：2026-11-07 已完成上一轮剩余的资料、合集/专栏和知识共享 SQL 下沉，并迁移调用方、删除论坛旧权限/校验转发。代码按模块测试、提交并推送。随后继续拆出学习计划模板、任务业务，统一两个创建入口的私有模板权限，并修复取消后重勾重复发任务积分。随后将小组帖子、文件业务与共用权限检查拆出，保持原有路由、响应和事务语义。本批继续拆出成员与加入申请业务，并修复角色变更的成员提权、管理员降级组长及转让给非成员三个权限遗漏。最新全量 **335 项通过（含 34 项真实 MySQL + HTTP 集成测试），无失败、错误或跳过**。核心数据访问分层已贯通，但 Map 类型化、大业务类细分、所有并发边界和部署同版本 MySQL 8 验证尚未全部完成。
 
 ## 一、阶段成果与当前改动
 
@@ -201,13 +201,22 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 新增 20 项单元测试、3 项 HTTP 契约测试和 2 项真实集成测试；覆盖扩展名/大小边界、账户写入限制、非成员拒绝、跨组删除、上传者/管理员权限、真实字节存储与删除、旧 UUID 路径及非白名单路径不清理。全量 **299 项通过，其中集成 31 项，0 失败、0 错误、0 跳过**；日志：`target/group-file-full-test.log`。
 - 文件清理继续沿用原来的尽力而为：磁盘删除失败不撤销元数据删除；上传后未登记的文件回收、文件/数据库失败原子性和并发删除仍待专项处理，本批不宣称已解决。
 
+### 20. 2026-11-07 小组成员与加入申请职责拆分
+
+- 新增 `GroupMembershipService`，承接自由加入、申请、邀请、退出、成员列表、角色变更、移除及申请列表/审核；Controller 的九个接口直接调用，不保留原 Service 转发。`GroupService` 从 341 行缩至 221 行。
+- 权限复用 `GroupAccessService`；`requireManager` 返回已验证的成员记录，供角色规则使用，其他调用不改变行为或增加查询。保留原 SQL、表结构、URL、JSON 字段及未声明事务的原有边界，不引入新框架。
+- 保留公开/私密与加入模式限制、重复加入不新增成员、申请可选正文、旧申请复用与审核状态清理、成员计数刷新/递减、组长不能直接退出/被移除、通知及审计。验证拒绝后重提、审核通过后退出重提均复用同一行，重复审核不会再次增加成员。
+- 三项安全回归先在搬迁后的旧逻辑上运行，均按预期失败（旧代码未拒绝）：普通成员可修改角色、组管理员可降级现任组长、组长可把归属转给非成员。修复后角色变更必须由组长/组管理员操作（非管理成员 403），现任组长不能被直接降级（400），变更/转让目标必须是本组成员（403），转让仍仅限组长；成功转让保留原组长降为 admin 的行为。这是本批有意收紧的权限行为，不宣称所有权限原样不变。
+- 新增 27 项业务单元测试、4 项 HTTP 契约测试、2 项 Repository 参数/范围测试和 3 项真实 MySQL + HTTP 集成测试。全量 **335 项通过，其中集成 34 项，0 失败、0 错误、0 跳过**；日志：`target/group-membership-full-test.log`。旧逻辑的三项失败复现留在 `target/group-membership-red-test.log`，不属于最终全量结果。
+- 本批只验证串行成员/审核/转让流程和拒绝路径无写入；并发申请/审核、计数竞争、转让多步骤失败原子性尚未专项验证，未因拆分静默添加事务或行锁。
+
 ## 二、尚未完成的部分
 
 本轮已完成前一版本中资料、合集/专栏、知识共享 SQL 下沉及论坛旧权限/校验转发两项高优先级工作。后续不再重复迁移已经下沉的数据访问。
 
 | 优先级 | 待办 | 完成标准 |
 | --- | --- | --- |
-| 中 | 继续拆分过大的业务类 | 学习计划模板、任务与小组帖子/文件已拆出；继续拆分 `GroupService` 的成员、加入申请等独立业务，不为分层新增空接口 |
+| 中 | 继续拆分过大的业务类 | 学习计划模板、任务与小组帖子/文件/成员申请已拆出；按真实业务边界评估剩余流程，不以行数为由强行拆分或新增空接口 |
 | 中 | 渐进替换 Map 与含糊命名 | 从稳定请求、响应与核心状态开始，保持 JSON 字段和错误语义；知识模块的 `k` 已统一为 `knowledge` |
 | 中 | 改善过长业务方法可读性 | 分阶段展开压缩写法、拆分复杂分支；本轮已展开共享可见性规则，但未宣称全项目完成 |
 | 中 | 补齐验证边界 | 在与部署一致的 MySQL 8 专用实例重跑；补充更多并发、文件/数据库联动和浏览器流程覆盖 |
@@ -217,13 +226,13 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 
 ## 三、验证记录与边界
 
-### 最近一次代码验证（2026-11-07，小组文件职责拆分）
+### 最近一次代码验证（2026-11-07，小组成员与加入申请拆分）
 
-- 每批变更后执行 `mvn -q test` 并启用 `KNOWLEDGE_INTEGRATION=true`；最后一次退出码 0。汇总 `target/surefire-reports/TEST-*.xml`：**299 项通过，0 失败、0 错误、0 跳过**，其中 `KnowledgeIntegrationTest` **31 项**。
+- 每批变更后执行 `mvn -q test` 并启用 `KNOWLEDGE_INTEGRATION=true`；最后一次退出码 0。汇总 `target/surefire-reports/TEST-*.xml`：**335 项通过，0 失败、0 错误、0 跳过**，其中 `KnowledgeIntegrationTest` **34 项**。
 - Java **21.0.5**，路径 `C:\Program Files\Java\jdk-21`；专用连接为 `jdbc:mysql://127.0.0.1:3308/student_forum_knowledge_test_refactor`，通过 `KNOWLEDGE_TEST_DB_URL` 指定，保留库名包含 `knowledge_test` 的保护。未启用集成开关时，这组集成测试按设计跳过。
 - 独立实例为 MySQL **26.7**，数据目录 `target/refactor-mysql`，本轮仅为回归重启此实例，测试完成后已核对父进程、数据目录及端口，仅关闭本轮启动的独立实例；未使用或修改正常业务数据库。该版本不替代部署 MySQL 8 的兼容性验证。
-- 前四批日志分别为 `target/resource-full-test.log`、`target/collection-full-test.log`、`target/knowledge-boundary-full-test.log`、`target/forum-boundary-full-test.log`；后续四批日志为 `target/plan-template-full-test.log`、`target/plan-task-full-test.log`、`target/group-post-full-test.log`、`target/group-file-full-test.log`。
-- 31 项真实集成测试含前序 27 项及本轮新增的小组帖子回复/互动/计数、管理权限/跨组隔离、文件上传/登记/删除/磁盘清理回归。覆盖 Session/CSRF、账户与版主范围、私有文件、事务回滚/提交后清理、学习联动、小组和社交隐私、增强发布及定时草稿失败隔离。定时发布失败注入的 WARN/堆栈为预期，最终测试报告无失败。
+- 前四批日志分别为 `target/resource-full-test.log`、`target/collection-full-test.log`、`target/knowledge-boundary-full-test.log`、`target/forum-boundary-full-test.log`；后续五批日志为 `target/plan-template-full-test.log`、`target/plan-task-full-test.log`、`target/group-post-full-test.log`、`target/group-file-full-test.log`、`target/group-membership-full-test.log`。
+- 34 项真实集成测试含前序 31 项及本批新增的加入申请拒绝/重提/审核、角色提权拒绝/组长转让、成员加入/邀请/移除及禁用组退出回归。覆盖 Session/CSRF、账户与版主范围、私有文件、事务回滚/提交后清理、学习联动、小组和社交隐私、增强发布及定时草稿失败隔离。定时发布失败注入的 WARN/堆栈为预期，最终测试报告无失败。
 - `git diff --check` 作为额外格式检查；不替代业务测试。本轮未修改前端，未重跑前端构建或完整浏览器端到端流程。
 
 ### 历史验证结果
@@ -245,6 +254,7 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 | 学习计划任务职责拆分 | 245 | 27 | 全部通过、无跳过；提交 `64799fd` |
 | 小组帖子职责拆分 | 274 | 29 | 全部通过、无跳过；提交 `41c2d04` |
 | 小组文件职责拆分 | 299 | 31 | 全部通过、无跳过；提交 `fef6c32` |
+| 小组成员与加入申请职责拆分 | 335 | 34 | 全部通过、无跳过；本批提交号待推送后补录 |
 
 - 旧记录中的 `127.0.0.1:13306`、`target/refactor-mysql-data` 与带 `20261102` 后缀的专用库属于前序验证环境，不是最近一次报告的连接信息。旧库升级 V15、空库迁移的结论为前序阶段记录，本次未重新执行。
 - 前序记录中的 `npm run build` 已通过，存在前端 chunk 大于 500 kB 的提示；本轮后续阶段未修改前端，本次未重新执行前端构建。
@@ -285,11 +295,11 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 
 ## 五、下一步建议与阅读顺序
 
-1. 优先准备与实际部署一致的 MySQL 8 独立测试环境，再跑当前 31 项集成测试；保持独立库保护，不对正常业务库运行破坏性回归。
-2. 学习计划模板、任务和小组帖子/文件业务已拆分；继续按业务边界拆分 `GroupService` 的成员、加入申请等职责，逐批保留权限及联动回归，不一次重写全部模块。
+1. 优先准备与实际部署一致的 MySQL 8 独立测试环境，再跑当前 34 项集成测试；保持独立库保护，不对正常业务库运行破坏性回归。
+2. 学习计划模板、任务和小组帖子/文件/成员申请业务已拆分；下一批先补小组打卡任务归属、举报目标范围及失败路径回归，再按真实业务边界决定拆分，不一次重写全部模块。
 3. 渐进整理 Map、请求/响应类型和过长业务方法，每批同步文档、验证、提交及推送。
 
-小组帖子可读 `GroupController → GroupPostService → GroupRepository`，文件可读 `GroupController → GroupFileService → GroupRepository / 文件系统`；权限共用 `GroupAccessService`，小组详情由 `GroupService.detail` 组装。
+小组帖子可读 `GroupController → GroupPostService → GroupRepository`，文件可读 `GroupController → GroupFileService → GroupRepository / 文件系统`，成员/加入申请可读 `GroupController → GroupMembershipService → GroupRepository`；权限共用 `GroupAccessService`，小组详情由 `GroupService.detail` 组装。
 
 任务写入可读 `StudyPlanController → StudyPlanTaskService → StudyPlanRepository / StudyPlanProgressService / StudyRewardService`，详情继续由 `StudyPlanService.plan` 组装。
 

@@ -49,13 +49,15 @@ Java 入口是 `src/main/java/com/studentforum/ForumApplication.java`，从这�
 
 **小组文件：** `GroupController` 的文件列表、登记、上传和删除直接进入 `GroupFileService`，复用 `GroupAccessService` 校验成员、管理身份和私密可见性。保留 25MB 上限、后缀白名单、上传者/组内管理员删除及路径清理规则；上传与登记仍是两个请求，磁盘清理仍为尽力而为，不代表已实现文件与数据库的失败原子性。
 
+**小组成员与申请：** 自由加入、申请/审核、邀请、退出、成员列表、角色变更和移除由 `GroupController` 直接进入 `GroupMembershipService`，权限共用 `GroupAccessService`；保留成员计数、历史申请复用、通知及审计。角色接口修复三项权限遗漏：普通成员不能自行提权，组管理员不能直接降级组长，转让/角色目标必须是本组成员；转让仍仅限组长，原组长转为 admin。串行流程已覆盖，但并发审核与多步骤失败原子性尚未专项验证。
+
 **知识模块的完整链路：** 笔记详情 `NoteService.detail` → `KnowledgeService.note` → `KnowledgeRepository.note`；共享服务负责可见性，仓库只查询投影。`KnowledgeService` 没有 JDBC、论坛发布服务或任意 SQL 入口。资料流程 `ResourceController` → `ResourceService` → `ResourceRepository` 保留私有文件访问、文件认领行锁和下载首次扣分事务；合集/专栏 `CollectionController` → `CollectionService` → `CollectionRepository` 保留条目计数、排序、关注计数和作者草稿权限。跨类型收录的可见性仍统一调用 `KnowledgeService.item`，不复制安全策略。
 
 **事务与文件：** 帖子硬删除先处理数据库，上传文件仅在最外层事务提交后清理；如果事务回滚，仍被帖子引用的文件会保留。真实 MySQL 集成测试包含回滚与提交两条路径，不能只通过检查 `@Transactional` 注解来验证这种行为。
 
 **对象与 DTO 不同：** `ModerationScope` 封装版主可见板块，`Post` 封装作者编辑与采纳规则，`StudyPlanPeriod` 校验计划日期；`AdminPostStatusRequest` 只负责接收 `{ "status": "hidden" }`。不必为每个数据表建立类，也不要为只有一个实现的 Service 强行添加接口。新增功能可先找到同领域 Controller，再沿 Service → Repository/Mapper 查找原有约束与 SQL。
 
-**渐进迁移边界：** 现有接口、字段名与数据库表不变；本轮只修补已验证的私有模板访问遗漏与任务取消后重勾重复发分，不放宽原有权限。当前 Service 不再直接持有 JdbcTemplate 或编写 SQL，数据访问进入具名 Repository / MyBatis Mapper；但大量请求/响应仍保留 `Map<String, Object>`，长业务类和类型化继续按领域渐进整理，不一次性改写接口结构。权限直接复用 `AccountAccessService`，内容规则复用 `ContentRules`；`ForumService` 不再提供旧权限/校验转发，仍负责真实的论坛业务编排。
+**渐进迁移边界：** 现有接口、字段名与数据库表不变；本轮修补已验证的私有模板访问遗漏、任务取消后重勾重复发分，以及小组角色变更的成员提权/组长保护/目标成员校验遗漏，不放宽原有权限。当前 Service 不再直接持有 JdbcTemplate 或编写 SQL，数据访问进入具名 Repository / MyBatis Mapper；但大量请求/响应仍保留 `Map<String, Object>`，长业务类和类型化继续按领域渐进整理，不一次性改写接口结构。权限直接复用 `AccountAccessService`，内容规则复用 `ContentRules`；`ForumService` 不再提供旧权限/校验转发，仍负责真实的论坛业务编排。
 
 ## 当前边界
 

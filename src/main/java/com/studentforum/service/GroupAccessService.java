@@ -40,9 +40,10 @@ public class GroupAccessService {
         }
     }
 
-    void requireManager(long groupId, long userId) {
+    Map<String, Object> requireManager(long groupId, long userId) {
         Map<String, Object> m = requireMember(groupId, userId);
         if (!Set.of("owner", "admin").contains(m.get("role"))) forbidden("仅组长或管理员可以操作");
+        return m;
     }
 
     Long userOrNull(Authentication auth) {

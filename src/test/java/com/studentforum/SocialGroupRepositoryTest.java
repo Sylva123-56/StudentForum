@@ -37,4 +37,16 @@ class SocialGroupRepositoryTest {
         new GroupRepository(db).refreshMemberCount(4);
         verify(db).update(contains("member_count=(SELECT COUNT(*)"), eq(4L), eq(4L));
     }
+    @Test void reapplicationClearsTheReviewStateAndRemovesOnlyTheSameUsersOlderRows() {
+        var groups = new GroupRepository(db);
+        groups.removeOlderRequests(4, 7, 42);
+        groups.reopenRequest("again", 42);
+        verify(db).update(contains("WHERE group_id=? AND user_id=? AND id<>?"), eq(4L), eq(7L), eq(42L));
+        verify(db).update(contains("status='pending',message=?,reviewer_id=NULL,handled_at=NULL"), eq("again"), eq(42L));
+    }
+
+    @Test void reviewableApplicationsAreScopedToTheGroupAndPendingStatus() {
+        new GroupRepository(db).reviewableRequest(42, 4);
+        verify(db).queryForList(contains("WHERE id=? AND group_id=? AND status='pending'"), eq(42L), eq(4L));
+    }
 }

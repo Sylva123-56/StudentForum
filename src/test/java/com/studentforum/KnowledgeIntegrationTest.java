@@ -493,6 +493,100 @@ class KnowledgeIntegrationTest {
   assertEquals(403, other.request("GET", path + "/files", null).statusCode());
  }
 
+ @Test void groupApplicationsCanBeRejectedReopenedApprovedAndReusedAfterLeaving() throws Exception {
+  long group = owner.ok("POST", "/groups", Map.of("name", "加入申请拆分回归", "visibility", "private", "joinMode", "apply")).get("group").get("id").asLong();
+  String path = "/groups/" + group;
+  assertEquals(403, other.request("POST", path + "/join", null).statusCode());
+  assertEquals("pending", other.ok("POST", path + "/apply", Map.of("message", "  一起复习  ")).get("status").asText());
+  assertEquals(400, other.request("POST", path + "/apply", null).statusCode());
+  assertEquals(403, other.request("GET", path + "/join-requests", null).statusCode());
+  var request = owner.ok("GET", path + "/join-requests", null).get(0);
+  long id = request.get("id").asLong();
+  assertEquals(otherId, request.get("user_id").asLong());
+  assertEquals("一起复习", request.get("message").asText());
+  assertEquals(403, other.request("PATCH", path + "/join-requests/" + id, Map.of("status", "approved")).statusCode());
+  long second = owner.ok("POST", "/groups", Map.of("name", "加入申请跨组回归")).get("group").get("id").asLong();
+  assertEquals(400, owner.request("PATCH", "/groups/" + second + "/join-requests/" + id, Map.of("status", "approved")).statusCode());
+  assertEquals("pending", db.queryForObject("SELECT status FROM study_group_join_requests WHERE id=?", String.class, id));
+  owner.ok("PATCH", path + "/join-requests/" + id, Map.of("status", "rejected"));
+  assertEquals(ownerId, db.queryForObject("SELECT reviewer_id FROM study_group_join_requests WHERE id=?", Long.class, id));
+  assertNotNull(db.queryForObject("SELECT handled_at FROM study_group_join_requests WHERE id=?", java.sql.Timestamp.class, id));
+  other.ok("POST", path + "/apply", null);
+  var reopened = owner.ok("GET", path + "/join-requests", null).get(0);
+  assertEquals(id, reopened.get("id").asLong());
+  assertEquals("", reopened.get("message").asText());
+  assertEquals("pending", reopened.get("status").asText());
+  assertTrue(reopened.get("reviewer_id").isNull());
+  assertTrue(reopened.get("handled_at").isNull());
+  owner.ok("PATCH", path + "/join-requests/" + id, Map.of("status", "approved"));
+  assertEquals(400, owner.request("PATCH", path + "/join-requests/" + id, Map.of("status", "approved")).statusCode());
+  assertEquals(2, other.ok("GET", path, null).get("group").get("member_count").asInt());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_members WHERE group_id=? AND user_id=?", Integer.class, group, otherId));
+  other.ok("POST", path + "/leave", null);
+  other.ok("POST", path + "/apply", Map.of("message", "再次申请"));
+  assertEquals(id, owner.ok("GET", path + "/join-requests", null).get(0).get("id").asLong());
+  owner.ok("PATCH", path + "/join-requests/" + id, Map.of("status", "approved"));
+  assertEquals(2, other.ok("GET", path, null).get("group").get("member_count").asInt());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_join_requests WHERE group_id=? AND user_id=?", Integer.class, group, otherId));
+ }
+
+ @Test void groupRolesRejectSelfPromotionOwnerDemotionAndNonMemberTransfers() throws Exception {
+  Client outsider = new Client();
+  long outsiderId = outsider.register("组长转让边界回归");
+  long group = owner.ok("POST", "/groups", Map.of("name", "小组角色安全回归", "visibility", "private", "joinMode", "invite")).get("group").get("id").asLong();
+  String path = "/groups/" + group;
+  owner.ok("POST", path + "/invite", Map.of("userId", otherId));
+  assertEquals(403, other.request("PATCH", path + "/members/" + otherId, Map.of("role", "admin")).statusCode());
+  assertEquals(403, other.request("PATCH", path + "/members/" + ownerId, Map.of("role", "member")).statusCode());
+  assertEquals("member", db.queryForObject("SELECT role FROM study_group_members WHERE group_id=? AND user_id=?", String.class, group, otherId));
+  assertEquals(400, owner.request("PATCH", path + "/members/" + ownerId, Map.of("role", "admin")).statusCode());
+  assertEquals(403, owner.request("PATCH", path + "/members/" + outsiderId, Map.of("role", "owner")).statusCode());
+  assertEquals(ownerId, db.queryForObject("SELECT owner_id FROM study_groups WHERE id=?", Long.class, group));
+  assertEquals("owner", db.queryForObject("SELECT role FROM study_group_members WHERE group_id=? AND user_id=?", String.class, group, ownerId));
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM study_group_logs WHERE group_id=? AND action='role'", Integer.class, group));
+  owner.ok("PATCH", path + "/members/" + otherId, Map.of("role", "admin"));
+  assertEquals(400, other.request("PATCH", path + "/members/" + ownerId, Map.of("role", "member")).statusCode());
+  assertEquals(403, other.request("PATCH", path + "/members/" + otherId, Map.of("role", "owner")).statusCode());
+  long second = owner.ok("POST", "/groups", Map.of("name", "角色跨组回归")).get("group").get("id").asLong();
+  assertEquals(403, owner.request("PATCH", "/groups/" + second + "/members/" + otherId, Map.of("role", "owner")).statusCode());
+  owner.ok("PATCH", path + "/members/" + otherId, Map.of("role", "owner"));
+  var detail = other.ok("GET", path, null);
+  assertEquals(otherId, detail.get("group").get("owner_id").asLong());
+  assertEquals("owner", detail.get("membership").get("role").asText());
+  assertEquals("admin", owner.ok("GET", path, null).get("membership").get("role").asText());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_members WHERE group_id=? AND role='owner'", Integer.class, group));
+  assertEquals(2, db.queryForObject("SELECT COUNT(*) FROM study_group_logs WHERE group_id=? AND action='role'", Integer.class, group));
+  assertEquals(403, owner.request("PATCH", path + "/members/" + ownerId, Map.of("role", "owner")).statusCode());
+  assertEquals(400, other.request("POST", path + "/leave", null).statusCode());
+ }
+
+ @Test void groupJoinInvitationAndRemovalKeepCountsAndDisabledGroupExit() throws Exception {
+  Client invited = new Client();
+  long invitedId = invited.register("成员邀请移除回归");
+  long group = owner.ok("POST", "/groups", Map.of("name", "成员生命周期回归")).get("group").get("id").asLong();
+  String path = "/groups/" + group;
+  var joined = other.ok("POST", path + "/join", null);
+  assertEquals(group, joined.get("group_id").asLong());
+  assertEquals(otherId, joined.get("user_id").asLong());
+  assertEquals("member", joined.get("role").asText());
+  other.ok("POST", path + "/join", null);
+  assertEquals(2, owner.ok("GET", path, null).get("group").get("member_count").asInt());
+  assertEquals(403, other.request("POST", path + "/invite", Map.of("userId", invitedId)).statusCode());
+  owner.ok("POST", path + "/invite", Map.of("userId", invitedId));
+  assertEquals(400, owner.request("POST", path + "/invite", Map.of("userId", invitedId)).statusCode());
+  assertEquals(3, invited.ok("GET", path + "/members", null).size());
+  assertEquals(403, other.request("DELETE", path + "/members/" + invitedId, null).statusCode());
+  assertEquals(400, owner.request("DELETE", path + "/members/" + ownerId, null).statusCode());
+  owner.ok("DELETE", path + "/members/" + invitedId, null);
+  assertEquals(403, invited.request("POST", path + "/posts", Map.of("title", "不能继续发帖", "content", "已移除的成员不能写入")).statusCode());
+  assertEquals(2, owner.ok("GET", path, null).get("group").get("member_count").asInt());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_logs WHERE group_id=? AND action='remove' AND target_id=?", Integer.class, group, invitedId));
+  owner.ok("DELETE", path, null);
+  assertEquals(400, other.request("POST", path + "/join", null).statusCode());
+  other.ok("POST", path + "/leave", null);
+  assertEquals(1, db.queryForObject("SELECT member_count FROM study_groups WHERE id=?", Integer.class, group));
+ }
+
  @Test void messagesKeepPrivacyBlockingAndMembershipBoundaries() throws Exception {
   Client sender = new Client(), recipient = new Client();
   long senderId = sender.register("社交发送回归"), recipientId = recipient.register("社交接收回归");
