@@ -1,6 +1,7 @@
 package com.studentforum.controller;
 
 import com.studentforum.service.GroupService;
+import com.studentforum.service.GroupPostService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -12,9 +13,11 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/api/groups")
 public class GroupController {
     private final GroupService groupService;
+    private final GroupPostService posts;
 
-    public GroupController(GroupService groupService) {
+    public GroupController(GroupService groupService, GroupPostService posts) {
         this.groupService = groupService;
+        this.posts = posts;
     }
 
     @GetMapping("/rankings")
@@ -94,37 +97,37 @@ public class GroupController {
 
     @GetMapping("/{groupId}/posts")
     public List<Map<String, Object>> groupPosts(@PathVariable long groupId, Authentication auth, @RequestParam(defaultValue = "") String keyword) {
-        return groupService.groupPosts(groupId,auth,keyword);
+        return posts.groupPosts(groupId,auth,keyword);
     }
 
     @PostMapping("/{groupId}/posts")
     public Map<String, Object> createPost(Authentication auth, @PathVariable long groupId, @RequestBody Map<String, Object> input) {
-        return groupService.createPost(auth,groupId,input);
+        return posts.createPost(auth,groupId,input);
     }
 
     @GetMapping("/{groupId}/posts/{postId}")
     public Map<String, Object> postDetail(@PathVariable long groupId, @PathVariable long postId, Authentication auth) {
-        return groupService.postDetail(groupId,postId,auth);
+        return posts.postDetail(groupId,postId,auth);
     }
 
     @PostMapping("/{groupId}/posts/{postId}/replies")
     public void reply(Authentication auth, @PathVariable long groupId, @PathVariable long postId, @RequestBody Map<String, Object> input) {
-        groupService.reply(auth,groupId,postId,input);
+        posts.reply(auth,groupId,postId,input);
     }
 
     @PostMapping("/{groupId}/posts/{postId}/like")
     public Map<String, Object> like(Authentication auth, @PathVariable long groupId, @PathVariable long postId) {
-        return groupService.like(auth,groupId,postId);
+        return posts.like(auth,groupId,postId);
     }
 
     @PostMapping("/{groupId}/posts/{postId}/favorite")
     public Map<String, Object> favorite(Authentication auth, @PathVariable long groupId, @PathVariable long postId) {
-        return groupService.favorite(auth,groupId,postId);
+        return posts.favorite(auth,groupId,postId);
     }
 
     @PatchMapping("/{groupId}/posts/{postId}")
     public void moderatePost(Authentication auth, @PathVariable long groupId, @PathVariable long postId, @RequestBody Map<String, Object> input) {
-        groupService.moderatePost(auth,groupId,postId,input);
+        posts.moderatePost(auth,groupId,postId,input);
     }
 
     @GetMapping("/{groupId}/announcements")

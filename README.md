@@ -45,6 +45,8 @@ Java 入口是 `src/main/java/com/studentforum/ForumApplication.java`，从这�
 
 **学习计划任务：** `StudyPlanController` 的任务增删改直接进入 `StudyPlanTaskService`，父任务汇总、计划状态、积分/徽章和可选打卡仍在同一外层事务中完成；响应详情复用 `StudyPlanService.plan`。任务取消后重勾通过既有积分记录去重，不再重复发任务积分；并发奖励唯一性和上限仍需专项验证。
 
+**小组帖子：** `GroupController` 的帖子列表、详情、发帖、回复、点赞/收藏和管理接口直接调用 `GroupPostService`；小组存在性、成员/管理身份和私密可见性共用 `GroupAccessService`，不复制权限检查。`GroupService.detail` 仍组装全部原有字段并复用 20 条帖子摘要；SQL、事务边界、活动计数、提及通知和审计语义保持不变。
+
 **知识模块的完整链路：** 笔记详情 `NoteService.detail` → `KnowledgeService.note` → `KnowledgeRepository.note`；共享服务负责可见性，仓库只查询投影。`KnowledgeService` 没有 JDBC、论坛发布服务或任意 SQL 入口。资料流程 `ResourceController` → `ResourceService` → `ResourceRepository` 保留私有文件访问、文件认领行锁和下载首次扣分事务；合集/专栏 `CollectionController` → `CollectionService` → `CollectionRepository` 保留条目计数、排序、关注计数和作者草稿权限。跨类型收录的可见性仍统一调用 `KnowledgeService.item`，不复制安全策略。
 
 **事务与文件：** 帖子硬删除先处理数据库，上传文件仅在最外层事务提交后清理；如果事务回滚，仍被帖子引用的文件会保留。真实 MySQL 集成测试包含回滚与提交两条路径，不能只通过检查 `@Transactional` 注解来验证这种行为。

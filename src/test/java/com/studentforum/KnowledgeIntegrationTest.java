@@ -385,6 +385,57 @@ class KnowledgeIntegrationTest {
   assertEquals(1, owner.ok("GET", "/groups/" + group, null).get("group").get("member_count").asInt());
  }
 
+ @Test void groupPostRepliesInteractionsAndCountersKeepTheirContracts() throws Exception {
+  long group = owner.ok("POST", "/groups", Map.of("name", "帖子职责回归小组")).get("group").get("id").asLong();
+  String path = "/groups/" + group;
+  other.ok("POST", path + "/join", null);
+  int activity = db.queryForObject("SELECT activity_score FROM study_groups WHERE id=?", Integer.class, group);
+  var created = other.ok("POST", path + "/posts", Map.of("title", "  小组代数复习  ", "content", "  复习函数和导数  ", "tags", "Algebra"));
+  long post = created.get("id").asLong();
+  assertEquals("小组代数复习", created.get("title").asText());
+  assertTrue(created.get("replies").isArray());
+  owner.ok("POST", path + "/posts/" + post + "/replies", Map.of("content", "  明天继续讨论  "));
+  var detail = other.ok("GET", path + "/posts/" + post, null);
+  assertEquals("明天继续讨论", detail.get("replies").get(0).get("content").asText());
+  assertEquals(1, detail.get("reply_count").asInt());
+  assertEquals(activity + 4, db.queryForObject("SELECT activity_score FROM study_groups WHERE id=?", Integer.class, group));
+  assertEquals(1, db.queryForObject("SELECT post_count FROM study_groups WHERE id=?", Integer.class, group));
+  assertEquals(1, owner.ok("GET", path + "/posts?keyword=ALGEBRA", null).size());
+  assertEquals(0, owner.ok("GET", path + "/posts?keyword=missing", null).size());
+  assertTrue(owner.ok("POST", path + "/posts/" + post + "/like", null).get("liked").asBoolean());
+  assertTrue(owner.ok("POST", path + "/posts/" + post + "/favorite", null).get("favorited").asBoolean());
+  assertFalse(other.ok("GET", path + "/posts/" + post, null).get("liked").asBoolean());
+  assertFalse(owner.ok("POST", path + "/posts/" + post + "/like", null).get("liked").asBoolean());
+  assertFalse(owner.ok("POST", path + "/posts/" + post + "/favorite", null).get("favorited").asBoolean());
+  assertEquals(400, owner.request("POST", path + "/posts/" + post + "/replies", Map.of("content", " ")).statusCode());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_post_replies WHERE post_id=?", Integer.class, post));
+  assertEquals(post, owner.ok("GET", path, null).get("posts").get(0).get("id").asLong());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_logs WHERE group_id=? AND action='post' AND target_id=?", Integer.class, group, post));
+ }
+
+ @Test void groupPostModerationPreservesPrivateAndCrossGroupIsolation() throws Exception {
+  long group = owner.ok("POST", "/groups", Map.of("name", "私密帖子权限回归", "visibility", "private", "joinMode", "invite")).get("group").get("id").asLong();
+  long second = owner.ok("POST", "/groups", Map.of("name", "跨组帖子权限回归")).get("group").get("id").asLong();
+  String path = "/groups/" + group;
+  long post = owner.ok("POST", path + "/posts", Map.of("title", "仅成员可见", "content", "权限检查仍然先于读取和写入")).get("id").asLong();
+  assertEquals(403, other.request("GET", path + "/posts/" + post, null).statusCode());
+  assertEquals(403, other.request("POST", path + "/posts/" + post + "/like", null).statusCode());
+  owner.ok("POST", path + "/invite", Map.of("userId", otherId));
+  assertEquals(403, other.request("PATCH", path + "/posts/" + post, Map.of("isTop", true)).statusCode());
+  assertEquals(404, owner.request("PATCH", "/groups/" + second + "/posts/" + post, Map.of("isTop", true)).statusCode());
+  assertEquals(404, owner.request("POST", "/groups/" + second + "/posts/" + post + "/replies", Map.of("content", "不能跨组回复")).statusCode());
+  owner.ok("PATCH", path + "/posts/" + post, Map.of("isTop", true, "isFeatured", true));
+  var detail = other.ok("GET", path + "/posts/" + post, null);
+  assertTrue(detail.get("is_top").asBoolean());
+  assertTrue(detail.get("is_featured").asBoolean());
+  assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM study_group_logs WHERE group_id=? AND action='moderate' AND target_id=?", Integer.class, group, post));
+  owner.ok("PATCH", path + "/posts/" + post, Map.of("status", "hidden"));
+  assertEquals(404, owner.request("GET", path + "/posts/" + post, null).statusCode());
+  assertEquals(0, other.ok("GET", path + "/posts", null).size());
+  other.ok("POST", path + "/leave", null);
+  assertEquals(403, other.request("GET", path + "/posts", null).statusCode());
+ }
+
  @Test void messagesKeepPrivacyBlockingAndMembershipBoundaries() throws Exception {
   Client sender = new Client(), recipient = new Client();
   long senderId = sender.register("社交发送回归"), recipientId = recipient.register("社交接收回归");

@@ -23,13 +23,15 @@ import org.springframework.web.server.ResponseStatusException;
 public class GroupService {
     private final GroupRepository groups;
     private final AccountAccessService accounts;
-    private final NotificationService notifications;
+    private final GroupAccessService access;
+    private final GroupPostService posts;
     private final Path directory;
 
-    public GroupService(AccountAccessService accounts, NotificationService notifications, GroupRepository groups, @Value("${forum.uploads}") String uploadPath) {
+    public GroupService(AccountAccessService accounts, GroupAccessService access, GroupPostService posts, GroupRepository groups, @Value("${forum.uploads}") String uploadPath) {
         this.groups = groups;
         this.accounts = accounts;
-        this.notifications = notifications;
+        this.access = access;
+        this.posts = posts;
         this.directory = Path.of(uploadPath).toAbsolutePath().normalize();
     }
 
@@ -65,16 +67,16 @@ public class GroupService {
     }
 
     public Map<String, Object> detail(long groupId, Authentication auth) {
-        Map<String, Object> group = group(groupId);
-        requireView(group, auth);
+        Map<String, Object> group = access.group(groupId);
+        access.requireView(group, auth);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("group", group);
-        result.put("posts", posts(groupId, auth, 20));
+        result.put("posts", posts.posts(groupId, auth, 20));
         result.put("announcements", groups.announcements(groupId));
         result.put("members", members(groupId));
         result.put("files", groups.files(groupId));
         result.put("checkins", checkins(groupId, auth));
-        Long userId = userOrNull(auth);
+        Long userId = access.userOrNull(auth);
         result.put("membership", userId == null ? null : groups.membership(groupId, userId).stream().findFirst().orElse(null));
         result.put("pendingApplication", userId == null ? null : groups.pendingApplication(groupId, userId).stream().findFirst().orElse(null));
         return result;
@@ -82,8 +84,8 @@ public class GroupService {
 
     public Map<String, Object> update(Authentication auth, long groupId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireManager(groupId, user);
-        Map<String, Object> old = group(groupId);
+        access.requireManager(groupId, user);
+        Map<String, Object> old = access.group(groupId);
         String name = input.containsKey("name") ? text(input, "name") : String.valueOf(old.get("name"));
         String description = input.containsKey("description") ? text(input, "description") : String.valueOf(old.get("description"));
         String visibility = input.containsKey("visibility") ? value(input, "visibility", "") : String.valueOf(old.get("visibility"));
@@ -92,12 +94,12 @@ public class GroupService {
             bad("小组设置无效");
         groups.updateGroup(name, description, input.getOrDefault("avatarUrl", old.get("avatar_url")), input.getOrDefault("tags", old.get("tags")), input.getOrDefault("subject", old.get("subject")), input.getOrDefault("school", old.get("school")), visibility, joinMode, groupId);
         log(groupId, user, "update", "group", groupId, name);
-        return group(groupId);
+        return access.group(groupId);
     }
 
     public void dissolve(Authentication auth, long groupId) {
         long user = accounts.id(auth);
-        Map<String, Object> g = group(groupId);
+        Map<String, Object> g = access.group(groupId);
         if (rowNumber(g, "owner_id") != user) forbidden("仅组长可以解散小组");
         groups.disableGroup(groupId);
         log(groupId, user, "dissolve", "group", groupId, "组长解散小组");
@@ -105,20 +107,20 @@ public class GroupService {
 
     public Map<String, Object> join(Authentication auth, long groupId) {
         long user = accounts.id(auth);
-        Map<String, Object> g = group(groupId);
+        Map<String, Object> g = access.group(groupId);
         if (!"active".equals(g.get("status"))) bad("小组不可加入");
-        if (member(groupId, user) != null) return member(groupId, user);
+        if (access.member(groupId, user) != null) return access.member(groupId, user);
         if (!"public".equals(g.get("visibility")) || !"free".equals(g.get("join_mode")))
             forbidden("该小组需要申请或邀请");
         addMember(groupId, user, "member");
         log(groupId, user, "join", "member", user, "自由加入");
-        return member(groupId, user);
+        return access.member(groupId, user);
     }
 
     public Map<String, Object> apply(Authentication auth, long groupId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        Map<String, Object> g = group(groupId);
-        if (member(groupId, user) != null) bad("你已经是小组成员");
+        Map<String, Object> g = access.group(groupId);
+        if (access.member(groupId, user) != null) bad("你已经是小组成员");
         if ("invite".equals(g.get("join_mode"))) forbidden("该小组仅接受邀请");
         if (!groups.pendingRequest(groupId, user).isEmpty())
             bad("申请已提交");
@@ -139,17 +141,17 @@ public class GroupService {
 
     public void invite(Authentication auth, long groupId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireManager(groupId, user);
+        access.requireManager(groupId, user);
         long invitee = number(input, "userId");
-        if (member(groupId, invitee) != null) bad("对方已经是成员");
+        if (access.member(groupId, invitee) != null) bad("对方已经是成员");
         addMember(groupId, invitee, "member");
-        groups.notifyUser(invitee, "group", "你已被邀请加入小组：" + group(groupId).get("name"));
+        groups.notifyUser(invitee, "group", "你已被邀请加入小组：" + access.group(groupId).get("name"));
         log(groupId, user, "invite", "member", invitee, "邀请成员");
     }
 
     public void leave(Authentication auth, long groupId) {
         long user = accounts.id(auth);
-        Map<String, Object> m = member(groupId, user);
+        Map<String, Object> m = access.member(groupId, user);
         if (m == null) bad("你不是小组成员");
         if ("owner".equals(m.get("role"))) bad("组长请先转让组长或解散小组");
         groups.removeMember(groupId, user);
@@ -158,15 +160,15 @@ public class GroupService {
     }
 
     public List<Map<String, Object>> memberList(long groupId, Authentication auth) {
-        Map<String, Object> g = group(groupId);
-        requireView(g, auth);
+        Map<String, Object> g = access.group(groupId);
+        access.requireView(g, auth);
         return members(groupId);
     }
 
     public void memberRole(Authentication auth, long groupId, long userId, Map<String, Object> input) {
         long actor = accounts.id(auth);
-        Map<String, Object> group = group(groupId);
-        Map<String, Object> actorMember = requireMember(groupId, actor);
+        Map<String, Object> group = access.group(groupId);
+        Map<String, Object> actorMember = access.requireMember(groupId, actor);
         String role = value(input, "role", "");
         if (!Set.of("owner", "admin", "member").contains(role)) bad("成员角色无效");
         if ("owner".equals(role) && !"owner".equals(actorMember.get("role"))) forbidden("仅组长可以转让组长");
@@ -182,89 +184,22 @@ public class GroupService {
 
     public void removeMember(Authentication auth, long groupId, long userId) {
         long actor = accounts.id(auth);
-        requireManager(groupId, actor);
-        Map<String, Object> target = requireMember(groupId, userId);
+        access.requireManager(groupId, actor);
+        Map<String, Object> target = access.requireMember(groupId, userId);
         if ("owner".equals(target.get("role"))) bad("不能移除组长");
         groups.removeMember(groupId, userId);
         groups.decrementMemberCount(groupId);
         log(groupId, actor, "remove", "member", userId, "移除成员");
     }
 
-    public List<Map<String, Object>> groupPosts(long groupId, Authentication auth, String keyword) {
-        Map<String, Object> g = group(groupId);
-        requireView(g, auth);
-        List<Map<String, Object>> list = posts(groupId, auth, 100);
-        if (keyword == null || keyword.isBlank()) return list;
-        String q = keyword.toLowerCase();
-        return list.stream().filter(p -> String.valueOf(p.get("title")).toLowerCase().contains(q) || String.valueOf(p.get("content")).toLowerCase().contains(q) || String.valueOf(p.get("tags")).toLowerCase().contains(q)).toList();
-    }
-
-    public Map<String, Object> createPost(Authentication auth, long groupId, Map<String, Object> input) {
-        long user = accounts.id(auth);
-        requireMember(groupId, user);
-        String title = text(input, "title"), content = text(input, "content");
-        if (title.length() < 2 || title.length() > 160 || content.isBlank()) bad("帖子标题或正文无效");
-        long id = groups.insertPost(groupId, user, title, content, input.get("imagePath"), text(input, "tags"));
-        groups.recordPostActivity(groupId);
-        log(groupId, user, "post", "post", id, title);
-        return post(groupId, id, auth);
-    }
-
-    public Map<String, Object> postDetail(long groupId, long postId, Authentication auth) {
-        return post(groupId, postId, auth);
-    }
-
-    public void reply(Authentication auth, long groupId, long postId, Map<String, Object> input) {
-        long user = accounts.id(auth);
-        requireMember(groupId, user);
-        post(groupId, postId, auth);
-        String content = text(input, "content");
-        if (content.isBlank() || content.length() > 3000) bad("回复内容无效");
-        groups.insertReply(postId, user, content);
-        groups.recordReplyActivity(groupId);
-        notifications.mentions(user, content, "group_post", postId, null);
-    }
-
-    public Map<String, Object> like(Authentication auth, long groupId, long postId) {
-        long user = accounts.id(auth);
-        requireMember(groupId, user);
-        post(groupId, postId, auth);
-        int changed = groups.likePost(postId, user);
-        if (changed == 0) groups.unlikePost(postId, user);
-        return post(groupId, postId, auth);
-    }
-
-    public Map<String, Object> favorite(Authentication auth, long groupId, long postId) {
-        long user = accounts.id(auth);
-        requireMember(groupId, user);
-        post(groupId, postId, auth);
-        int changed = groups.favoritePost(postId, user);
-        if (changed == 0)
-            groups.unfavoritePost(postId, user);
-        return post(groupId, postId, auth);
-    }
-
-    public void moderatePost(Authentication auth, long groupId, long postId, Map<String, Object> input) {
-        long actor = accounts.id(auth);
-        requireManager(groupId, actor);
-        post(groupId, postId, auth);
-        if (input.containsKey("status"))
-            groups.setPostStatus(value(input, "status", "published"), postId, groupId);
-        if (input.containsKey("isTop"))
-            groups.setPostTop(Boolean.TRUE.equals(input.get("isTop")), postId, groupId);
-        if (input.containsKey("isFeatured"))
-            groups.setPostFeatured(Boolean.TRUE.equals(input.get("isFeatured")), postId, groupId);
-        log(groupId, actor, "moderate", "post", postId, input.toString());
-    }
-
     public List<Map<String, Object>> announcements(long groupId, Authentication auth) {
-        requireView(group(groupId), auth);
+        access.requireView(access.group(groupId), auth);
         return groups.announcements(groupId);
     }
 
     public void announcement(Authentication auth, long groupId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireManager(groupId, user);
+        access.requireManager(groupId, user);
         String title = text(input, "title"), content = text(input, "content");
         if (title.isBlank() || content.isBlank()) bad("公告标题和内容不能为空");
         groups.insertAnnouncement(groupId, user, title, content);
@@ -273,13 +208,13 @@ public class GroupService {
     }
 
     public List<Map<String, Object>> files(long groupId, Authentication auth) {
-        requireView(group(groupId), auth);
+        access.requireView(access.group(groupId), auth);
         return groups.files(groupId);
     }
 
     public void file(Authentication auth, long groupId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireMember(groupId, user);
+        access.requireMember(groupId, user);
         String name = text(input, "name"), path = text(input, "path");
         if (name.isBlank() || path.isBlank()) bad("文件名和路径不能为空");
         groups.insertFile(groupId, user, name, path, numberOr(input, "sizeBytes", 0), !Boolean.FALSE.equals(input.get("allowDownload")));
@@ -288,7 +223,7 @@ public class GroupService {
 
     public Map<String, Object> uploadFile(Authentication auth, long groupId, MultipartFile file) throws IOException {
         long user = accounts.id(auth);
-        requireMember(groupId, user);
+        access.requireMember(groupId, user);
         accounts.writable(auth);
         if (file == null || file.isEmpty()) bad("请选择要上传的文件");
         if (file.getSize() > 25_000_000) bad("资料不能超过 25MB");
@@ -304,25 +239,25 @@ public class GroupService {
 
     public void deleteFile(Authentication auth, long groupId, long fileId) {
         long user = accounts.id(auth);
-        requireMember(groupId, user);
+        access.requireMember(groupId, user);
         List<Map<String, Object>> rows = groups.findFile(fileId, groupId);
         if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "资料不存在");
         Map<String, Object> row = rows.getFirst();
-        if (rowNumber(row, "uploader_id") != user) requireManager(groupId, user);
+        if (rowNumber(row, "uploader_id") != user) access.requireManager(groupId, user);
         groups.deleteFile(fileId);
         removeStoredFile(String.valueOf(row.get("path")));
         log(groupId, user, "file_delete", "file", fileId, String.valueOf(row.get("name")));
     }
 
     public List<Map<String, Object>> checkins(long groupId, Authentication auth) {
-        requireView(group(groupId), auth);
-        Long user = userOrNull(auth);
+        access.requireView(access.group(groupId), auth);
+        Long user = access.userOrNull(auth);
         return groups.checkins(groupId, user);
     }
 
     public void createCheckin(Authentication auth, long groupId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireManager(groupId, user);
+        access.requireManager(groupId, user);
         String title = text(input, "title");
         if (title.isBlank()) bad("打卡任务标题不能为空");
         groups.insertCheckin(groupId, user, title, text(input, "description"), input.get("dueAt"));
@@ -331,27 +266,27 @@ public class GroupService {
 
     public void completeCheckin(Authentication auth, long groupId, long checkinId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireMember(groupId, user);
+        access.requireMember(groupId, user);
         groups.recordCheckin(checkinId, user, text(input, "content"));
         groups.recordCheckinActivity(groupId);
     }
 
     public void report(Authentication auth, long groupId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireMember(groupId, user);
+        access.requireMember(groupId, user);
         groups.insertReport(groupId, user, value(input, "targetType", "group"), numberOr(input, "targetId", groupId), text(input, "reason"), text(input, "description"));
         notifyManagers(groupId, "小组收到新的违规内容举报");
     }
 
     public List<Map<String, Object>> reports(Authentication auth, long groupId) {
         long user = accounts.id(auth);
-        requireManager(groupId, user);
+        access.requireManager(groupId, user);
         return groups.reports(groupId);
     }
 
     public void handleReport(Authentication auth, long groupId, long reportId, Map<String, Object> input) {
         long user = accounts.id(auth);
-        requireManager(groupId, user);
+        access.requireManager(groupId, user);
         String status = value(input, "status", "");
         if (!Set.of("resolved", "rejected").contains(status)) bad("举报状态无效");
         groups.reviewReport(status, user, reportId, groupId);
@@ -360,13 +295,13 @@ public class GroupService {
 
     public List<Map<String, Object>> requests(Authentication auth, long groupId) {
         long user = accounts.id(auth);
-        requireManager(groupId, user);
+        access.requireManager(groupId, user);
         return groups.joinRequests(groupId);
     }
 
     public void reviewRequest(Authentication auth, long groupId, long requestId, Map<String, Object> input) {
         long actor = accounts.id(auth);
-        requireManager(groupId, actor);
+        access.requireManager(groupId, actor);
         String status = value(input, "status", "");
         if (!Set.of("approved", "rejected").contains(status)) bad("审核状态无效");
         List<Map<String, Object>> rows = groups.reviewableRequest(requestId, groupId);
@@ -375,7 +310,7 @@ public class GroupService {
         // 同一位用户在同一小组只保留一条申请记录，防止历史 approved/rejected 记录撞唯一键
         groups.removeOlderRequests(groupId, user, requestId);
         groups.reviewRequest(status, actor, requestId);
-        if ("approved".equals(status) && member(groupId, user) == null) addMember(groupId, user, "member");
+        if ("approved".equals(status) && access.member(groupId, user) == null) addMember(groupId, user, "member");
         groups.notifyUser(user, "group", "小组加入申请已" + (("approved".equals(status)) ? "通过" : "拒绝"));
         log(groupId, actor, "review", "join_request", requestId, status);
     }
@@ -388,7 +323,7 @@ public class GroupService {
 
     public void adminUpdate(Authentication auth, long groupId, Map<String, Object> input) {
         accounts.admin(auth);
-        group(groupId);
+        access.group(groupId);
         String status = value(input, "status", "");
         if (!Set.of("active", "disabled").contains(status)) bad("小组状态无效");
         groups.setGroupStatus(status, groupId);
@@ -402,50 +337,8 @@ public class GroupService {
         return groups.groupLogs(groupId);
     }
 
-    private List<Map<String, Object>> posts(long groupId, Authentication auth, int limit) {
-        Long user = userOrNull(auth);
-        return groups.posts(groupId, user, limit);
-    }
-
-    private Map<String, Object> post(long groupId, long postId, Authentication auth) {
-        requireView(group(groupId), auth);
-        List<Map<String, Object>> rows = posts(groupId, auth, 1000).stream().filter(p -> rowNumber(p, "id") == postId).toList();
-        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "帖子不存在");
-        Map<String, Object> result = new LinkedHashMap<>(rows.getFirst());
-        result.put("replies", groups.replies(postId));
-        return result;
-    }
-
-    private Map<String, Object> group(long id) {
-        List<Map<String, Object>> rows = groups.findGroup(id);
-        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "小组不存在");
-        return rows.getFirst();
-    }
-
     private List<Map<String, Object>> members(long groupId) {
         return groups.members(groupId);
-    }
-
-    private Map<String, Object> member(long groupId, long userId) {
-        return groups.membership(groupId, userId).stream().findFirst().orElse(null);
-    }
-
-    private Map<String, Object> requireMember(long groupId, long userId) {
-        Map<String, Object> m = member(groupId, userId);
-        if (m == null) forbidden("请先加入小组");
-        return m;
-    }
-
-    private void requireView(Map<String, Object> group, Authentication auth) {
-        if ("private".equals(group.get("visibility"))) {
-            Long user = userOrNull(auth);
-            if (user == null || member(rowNumber(group, "id"), user) == null) forbidden("这是私密小组，请先加入后查看");
-        }
-    }
-
-    private void requireManager(long groupId, long userId) {
-        Map<String, Object> m = requireMember(groupId, userId);
-        if (!Set.of("owner", "admin").contains(m.get("role"))) forbidden("仅组长或管理员可以操作");
     }
 
     private void addMember(long groupId, long userId, String role) {
@@ -463,11 +356,6 @@ public class GroupService {
 
     private void log(long groupId, long actor, String action, String type, long target, String detail) {
         groups.log(groupId, actor, action, type, target, detail == null ? "" : detail);
-    }
-
-    private Long userOrNull(Authentication auth) {
-        if (auth == null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal())) return null;
-        return Long.parseLong(auth.getName());
     }
 
     private String text(Map<String, Object> input, String key) {
