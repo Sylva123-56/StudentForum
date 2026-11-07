@@ -1,6 +1,7 @@
 # 后端重构进度记录
 
 更新日期：2026-11-07
+
 代码分支：`codex/rebuild`；按模块验证、提交并推送，最新提交以 `git log -1` 为准；历史提交与推送状态见第四节
 
 目标：改善学习与维护体验，逐步形成 Controller → Service → Repository/Mapper → 数据库的分层结构。
@@ -186,7 +187,7 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 
 - 每批变更后执行 `mvn -q test` 并启用 `KNOWLEDGE_INTEGRATION=true`；最后一次退出码 0。汇总 `target/surefire-reports/TEST-*.xml`：**208 项通过，0 失败、0 错误、0 跳过**，其中 `KnowledgeIntegrationTest` **23 项**。
 - Java **21.0.5**，路径 `C:\Program Files\Java\jdk-21`；专用连接为 `jdbc:mysql://127.0.0.1:3308/student_forum_knowledge_test_refactor`，通过 `KNOWLEDGE_TEST_DB_URL` 指定，保留库名包含 `knowledge_test` 的保护。未启用集成开关时，这组集成测试按设计跳过。
-- 独立实例为 MySQL **26.7**，数据目录 `target/refactor-mysql`，本轮仅为回归重启此实例，未使用或修改正常业务数据库。该版本不替代部署 MySQL 8 的兼容性验证。
+- 独立实例为 MySQL **26.7**，数据目录 `target/refactor-mysql`，本轮仅为回归重启此实例，测试完成后核对父进程、数据目录及端口，仅关闭本轮启动的独立实例；未使用或修改正常业务数据库。该版本不替代部署 MySQL 8 的兼容性验证。
 - 四批日志分别为 `target/resource-full-test.log`、`target/collection-full-test.log`、`target/knowledge-boundary-full-test.log`、`target/forum-boundary-full-test.log`。
 - 23 项真实集成测试含原有 21 项及本轮新增的资料文件认领回滚、合集计数/排序与专栏权限回归。覆盖 Session/CSRF、账户与版主范围、私有文件、事务回滚/提交后清理、学习联动、小组和社交隐私、增强发布及定时草稿失败隔离。定时发布失败注入的 WARN/堆栈为预期，最终测试报告无失败。
 - `git diff --check` 作为额外格式检查；不替代业务测试。本轮未修改前端，未重跑前端构建或完整浏览器端到端流程。
@@ -205,7 +206,7 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 | 资料 | 188 | 22 | 全部通过、无跳过；提交 `1feecef` |
 | 合集与专栏 | 195 | 23 | 全部通过、无跳过；提交 `2b24672` |
 | 知识共享边界 | 204 | 23 | 全部通过、无跳过；提交 `240a30f` |
-| 论坛权限/校验转发收尾 | 208 | 23 | 全部通过、无跳过；本批变更 |
+| 论坛权限/校验转发收尾 | 208 | 23 | 全部通过、无跳过；提交 `faad0c6` |
 
 - 旧记录中的 `127.0.0.1:13306`、`target/refactor-mysql-data` 与带 `20261102` 后缀的专用库属于前序验证环境，不是最近一次报告的连接信息。旧库升级 V15、空库迁移的结论为前序阶段记录，本次未重新执行。
 - 前序记录中的 `npm run build` 已通过，存在前端 chunk 大于 500 kB 的提示；本轮后续阶段未修改前端，本次未重新执行前端构建。
@@ -235,8 +236,9 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 | `1feecef` | 资料 Repository 与下载事务回归 | 已提交并推送，`git ls-remote` 已确认 |
 | `2b24672` | 合集与专栏 Repository 及回归 | 已提交并推送 |
 | `240a30f` | 知识共享 SQL 与依赖边界 | 已提交并推送 |
+| `faad0c6` | 论坛权限/校验转发收尾及阅读指南 | 已提交并推送，`git ls-remote` 已确认 |
 
-本轮用户已明确授权每完成一部分即提交并推送；后续又要求完成当前小任务后暂停。2026-11-05 已完成错题、图片与 Wiki 后暂停；2026-11-07 用户要求继续，现按模块验证、提交并推送。
+用户授权每完成一部分即提交并推送。2026-11-05 完成错题、图片与 Wiki 后暂停；2026-11-07 恢复，完成上列四批重构并逐批推送。以上代码提交的远端状态已核实，本次文档收尾另行提交。
 
 ## 五、下一步建议与阅读顺序
 
