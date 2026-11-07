@@ -1,6 +1,7 @@
 package com.studentforum.controller;
 
 import com.studentforum.service.StudyPlanService;
+import com.studentforum.service.StudyPlanTemplateService;
 import java.util.Map;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -10,8 +11,11 @@ import org.springframework.web.bind.annotation.*;
 public class StudyPlanController {
     private final StudyPlanService studyPlanService;
 
-    public StudyPlanController(StudyPlanService studyPlanService) {
+    private final StudyPlanTemplateService templates;
+
+    public StudyPlanController(StudyPlanService studyPlanService, StudyPlanTemplateService templates) {
         this.studyPlanService = studyPlanService;
+        this.templates = templates;
     }
 
     @GetMapping
@@ -68,17 +72,17 @@ public class StudyPlanController {
 
     @GetMapping("/templates")
     public Map<String, Object> templates(Authentication auth, @RequestParam(required = false) String subject) {
-        return studyPlanService.templates(auth,subject);
+        return templates.templates(auth,subject);
     }
 
     @PostMapping("/templates")
     public Map<String, Object> createTemplate(Authentication auth, @RequestBody Map<String, Object> input) {
-        return studyPlanService.createTemplate(auth,input);
+        return templates.createTemplate(auth,input);
     }
 
     @PostMapping("/{planId}/template")
     public Map<String, Object> templateFromPlan(Authentication auth, @PathVariable long planId, @RequestBody(required = false) Map<String, Object> input) {
-        return studyPlanService.templateFromPlan(auth,planId,input);
+        return templates.templateFromPlan(auth,planId,input);
     }
 
     @PostMapping("/templates/{templateId}/apply")
@@ -88,6 +92,6 @@ public class StudyPlanController {
 
     @DeleteMapping("/templates/{templateId}")
     public Map<String, Object> deleteTemplate(Authentication auth, @PathVariable long templateId) {
-        return studyPlanService.deleteTemplate(auth,templateId);
+        return templates.deleteTemplate(auth,templateId);
     }
 }

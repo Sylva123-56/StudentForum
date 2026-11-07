@@ -6,7 +6,6 @@ import com.studentforum.model.StudyPlanPeriod;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * 学习计划：计划 CRUD、任务拆解与勾选、计划模板、计划统计。
+ * 学习计划：计划 CRUD、任务拆解与勾选、模板生成计划、计划统计。
  * 计划、任务、专注记录、打卡共用一条"做了多少"的账，勾任务会回写积分和徽章。
  */
 @Service
@@ -34,8 +33,9 @@ public class StudyPlanService {
     private final StudySettingsService studySettings;
     private final StudyRewardService rewards;
     private final StudyPlanProgressService progress;
+    private final StudyPlanTemplateService templates;
 
-    public StudyPlanService(StudyPlanRepository repository, AccountAccessService accounts, StudyToolService tools, StudyPreferencesService preferences, StudySettingsService studySettings, StudyRewardService rewards, StudyPlanProgressService progress) {
+    public StudyPlanService(StudyPlanRepository repository, AccountAccessService accounts, StudyToolService tools, StudyPreferencesService preferences, StudySettingsService studySettings, StudyRewardService rewards, StudyPlanProgressService progress, StudyPlanTemplateService templates) {
         this.repository = repository;
         this.accounts = accounts;
         this.tools = tools;
@@ -43,6 +43,7 @@ public class StudyPlanService {
         this.studySettings = studySettings;
         this.rewards = rewards;
         this.progress = progress;
+        this.templates = templates;
     }
 
     private long id(Authentication auth) {
@@ -120,7 +121,7 @@ public class StudyPlanService {
 
         if (input.get("templateId") != null) {
             long templateId = tools.number(input, "templateId", 0);
-            if (templateId > 0) applyTemplate(planId, templateId, start, end, user);
+            if (templateId > 0) templates.applyTasks(planId, templateId, start, end, user);
         }
         if (input.get("tasks") instanceof List<?> tasks) {
             int order = 0;
@@ -326,64 +327,6 @@ public class StudyPlanService {
 
     // ---------- 计划模板 ----------
 
-    public Map<String, Object> templates(Authentication auth, String subject) {
-        long user = id(auth);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("official", repository.officialTemplates(subject));
-        result.put("mine", repository.ownedTemplates(user, subject));
-        result.put("shared", repository.sharedTemplates(user, subject));
-        result.put("subjects", preferences.subjects(user));
-        return result;
-    }
-
-    /** 把模板存成我的计划模板，之后可以反复套用。 */
-    @Transactional
-    public Map<String, Object> createTemplate(Authentication auth, Map<String, Object> input) {
-        accounts.writable(auth);
-        long user = id(auth);
-        String title = tools.text(input, "title", 2, 60, "模板名称需要 2 到 60 个字");
-        String subject = tools.optionalText(input, "subject", 40);
-        String goal = tools.optionalText(input, "goal", 200);
-        int cycle = (int) tools.number(input, "cycleDays", 7);
-        check(cycle >= 1 && cycle <= 365, "周期需要在 1 到 365 天之间");
-        String tasks = templateTasks(input);
-        String visibility = input.get("visibility") == null ? "shared" : String.valueOf(input.get("visibility"));
-        check("shared".equals(visibility) || "private".equals(visibility), "模板可见性无效");
-        long templateId = repository.insertTemplate(user, title, subject == null ? "" : subject, goal == null ? "" : goal, cycle, tasks, visibility);
-        return required(repository.findTemplate(templateId), "模板不存在");
-    }
-
-    /** 把自己某个计划直接存成模板（用户最常用的入口）。 */
-    @Transactional
-    public Map<String, Object> templateFromPlan(Authentication auth, long planId, Map<String, Object> input) {
-        accounts.writable(auth);
-        long user = id(auth);
-        Map<String, Object> plan = plan(planId, user);
-        Map<String, Object> body = input == null ? new LinkedHashMap<>() : input;
-        String title = body.containsKey("title") ? tools.text(body, "title", 2, 60, "模板名称需要 2 到 60 个字") : String.valueOf(plan.get("title"));
-        int cycle = (int) tools.number(body, "cycleDays", 7);
-        check(cycle >= 1 && cycle <= 365, "周期需要在 1 到 365 天之间");
-        String visibility = body.get("visibility") == null ? "shared" : String.valueOf(body.get("visibility"));
-        check("shared".equals(visibility) || "private".equals(visibility), "模板可见性无效");
-        List<Map<String, Object>> tasks = progress.planTasks(planId);
-        List<String> lines = new ArrayList<>();
-        for (Map<String, Object> task : tasks) {
-            if (task.get("parent_id") != null) continue;
-            StringBuilder line = new StringBuilder(String.valueOf(task.get("title")));
-            if (task.get("due_date") != null) {
-                LocalDate due = StudyToolService.toDate(task.get("due_date"));
-                LocalDate start = StudyToolService.toDate(plan.get("start_date"));
-                if (due != null && start != null) line.append("|第 ").append(Math.max(1, ChronoUnit.DAYS.between(start, due) + 1)).append(" 天");
-            }
-            lines.add(line.toString());
-        }
-        check(!lines.isEmpty(), "这个计划还没有任务，无法存成模板");
-        long ownerId = user;
-        String closed = String.join("\n", lines);
-        long templateId = repository.insertTemplate(ownerId, title, String.valueOf(plan.get("subject")), String.valueOf(plan.get("goal")), cycle, closed, visibility);
-        return required(repository.findTemplate(templateId), "模板不存在");
-    }
-
     /**
      * 套用模板生成计划：模板任务按"第 N 天"落在计划开始日之后，
      * 这样同一个模板在不同起点都能生成合理的到期日。
@@ -392,8 +335,7 @@ public class StudyPlanService {
     public Map<String, Object> applyTemplateEndpoint(Authentication auth, long templateId, Map<String, Object> input) {
         accounts.writable(auth);
         long user = id(auth);
-        Map<String, Object> template = required(repository.findTemplate(templateId), "模板不存在");
-        check(template.get("owner_id") == null || tools.rowNumber(template, "owner_id") == user || "shared".equals(template.get("visibility")), "这个模板没有公开");
+        Map<String, Object> template = templates.readableTemplate(templateId, user);
         Map<String, Object> body = input == null ? new LinkedHashMap<>() : input;
         String title = body.containsKey("title") ? tools.text(body, "title", 2, 60, "计划标题需要 2 到 60 个字") : String.valueOf(template.get("title"));
         LocalDate start = body.containsKey("startDate") ? tools.date(body, "startDate", LocalDate.now()) : LocalDate.now();
@@ -407,59 +349,9 @@ public class StudyPlanService {
         else groupId = null;
 
         long planId = repository.insertTemplatePlan(user, title, subject, goal, start, end, groupId, templateId);
-        applyTemplate(planId, templateId, start, end, user);
+        templates.applyTasks(planId, templateId, start, end, user);
         repository.incrementTemplateUse(templateId);
         return detail(planId, user);
     }
 
-    public Map<String, Object> deleteTemplate(Authentication auth, long templateId) {
-        accounts.writable(auth);
-        long user = id(auth);
-        Map<String, Object> template = required(repository.findTemplate(templateId), "模板不存在");
-        if (template.get("owner_id") == null || tools.rowNumber(template, "owner_id") != user) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "只能删除自己的模板");
-        repository.deleteTemplate(templateId);
-        return Map.of("deleted", true);
-    }
-
-    /** 模板任务文本格式：每行一条，可选 `|第 N 天` 指定相对到期日。 */
-    private void applyTemplate(long planId, long templateId, LocalDate start, LocalDate end, long user) {
-        Map<String, Object> template = required(repository.findTemplate(templateId), "模板不存在");
-        String block = template.get("tasks") == null ? "" : String.valueOf(template.get("tasks"));
-        int order = 0;
-        for (String line : block.split("\\r?\\n")) {
-            String value = line.trim();
-            if (value.isEmpty()) continue;
-            int day = 0;
-            int split = value.indexOf("|第 ");
-            if (split > 0) {
-                String tail = value.substring(split + 2).replace("天", "").trim();
-                try {
-                    day = Integer.parseInt(tail);
-                } catch (NumberFormatException ignored) {
-                    day = 0;
-                }
-                value = value.substring(0, split).trim();
-            }
-            if (value.isEmpty()) continue;
-            LocalDate due = day > 0 ? start.plusDays(day - 1L) : null;
-            if (due != null && end != null && due.isAfter(end)) due = end;
-            repository.insertTask(planId, value.length() > 100 ? value.substring(0, 100) : value, due, order++);
-        }
-    }
-
-    private String templateTasks(Map<String, Object> input) {
-        Object raw = input.get("tasks");
-        if (raw instanceof List<?> list) {
-            List<String> lines = new ArrayList<>();
-            for (Object item : list) {
-                if (item == null) continue;
-                String value = String.valueOf(item).trim();
-                if (!value.isEmpty()) lines.add(value.length() > 100 ? value.substring(0, 100) : value);
-            }
-            check(!lines.isEmpty(), "模板至少需要一条任务");
-            return String.join("\n", lines);
-        }
-        String text = tools.text(input, "tasks", 1, 2000, "模板至少需要一条任务");
-        return text;
-    }
 }

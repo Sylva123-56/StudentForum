@@ -41,6 +41,8 @@ Java 入口是 `src/main/java/com/studentforum/ForumApplication.java`，从这�
 
 **学习工具的分层：** `POST /api/checkin` → `CheckinService` → `CheckinRepository`，专注记录/统计 → `FocusService` → `FocusRepository`；这两个业务服务不再持有 `JdbcTemplate` 或 SQL。共用规则配置由 `StudySettingsService` / `StudySettingsRepository` 处理，任务进度由 `StudyPlanProgressService` / `StudyPlanRepository` 处理，自习室可见性与总量刷新由 `StudyRoomAccessService` / `StudyRoomRepository` 处理，科目和已加入小组候选由 `StudyPreferencesService` / `StudyPreferencesRepository` 处理。权限、输入校验、响应组装仍留在 Service，Repository 不返回 HTTP 异常。
 
+**学习计划模板：** 模板分类、创建、计划另存模板和删除由 `StudyPlanTemplateService` 负责；`StudyPlanService.createPlan/applyTemplateEndpoint` 仍持有生成计划的外层事务，模板任务展开复用同一权限校验并加入该事务。两个创建入口都不能使用他人的私有模板，失败不会留下半条计划或任务。
+
 **知识模块的完整链路：** 笔记详情 `NoteService.detail` → `KnowledgeService.note` → `KnowledgeRepository.note`；共享服务负责可见性，仓库只查询投影。`KnowledgeService` 没有 JDBC、论坛发布服务或任意 SQL 入口。资料流程 `ResourceController` → `ResourceService` → `ResourceRepository` 保留私有文件访问、文件认领行锁和下载首次扣分事务；合集/专栏 `CollectionController` → `CollectionService` → `CollectionRepository` 保留条目计数、排序、关注计数和作者草稿权限。跨类型收录的可见性仍统一调用 `KnowledgeService.item`，不复制安全策略。
 
 **事务与文件：** 帖子硬删除先处理数据库，上传文件仅在最外层事务提交后清理；如果事务回滚，仍被帖子引用的文件会保留。真实 MySQL 集成测试包含回滚与提交两条路径，不能只通过检查 `@Transactional` 注解来验证这种行为。

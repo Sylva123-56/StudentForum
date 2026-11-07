@@ -269,6 +269,42 @@ class KnowledgeIntegrationTest {
   assertEquals("archived", archived.get("status").asText());
  }
 
+ @Test void templateCreationEntryPointsKeepPrivacyAndRollBackPartialPlans() throws Exception {
+  long template = owner.ok("POST", "/plans/templates", Map.of("title", "模板事务回归", "visibility", "private", "tasks", List.of("模板任务|第 1 天"))).get("id").asLong();
+  assertEquals(400, other.request("POST", "/plans/templates/" + template + "/apply", null).statusCode());
+  String denied = "模板越权回滚" + suffix;
+  assertEquals(400, other.request("POST", "/plans", Map.of("title", denied, "templateId", template)).statusCode());
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM study_plans WHERE user_id=? AND title=?", Integer.class, otherId, denied));
+  String failed = "模板后续任务回滚" + suffix;
+  int tasksBefore = db.queryForObject("SELECT COUNT(*) FROM study_tasks WHERE plan_id IN (SELECT id FROM study_plans WHERE user_id=?)", Integer.class, ownerId);
+  assertEquals(400, owner.request("POST", "/plans", Map.of("title", failed, "templateId", template, "tasks", List.of(Map.of("title", "")))).statusCode());
+  assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM study_plans WHERE user_id=? AND title=?", Integer.class, ownerId, failed));
+  assertEquals(tasksBefore, db.queryForObject("SELECT COUNT(*) FROM study_tasks WHERE plan_id IN (SELECT id FROM study_plans WHERE user_id=?)", Integer.class, ownerId));
+  assertEquals(0, db.queryForObject("SELECT use_count FROM plan_templates WHERE id=?", Integer.class, template));
+  var applied = owner.ok("POST", "/plans/templates/" + template + "/apply", null);
+  assertEquals(1, applied.get("tasks").size());
+  assertEquals(1, db.queryForObject("SELECT use_count FROM plan_templates WHERE id=?", Integer.class, template));
+  var created = owner.ok("POST", "/plans", Map.of("title", "本人模板创建计划", "templateId", template));
+  assertEquals(1, created.get("tasks").size());
+  assertEquals(1, db.queryForObject("SELECT use_count FROM plan_templates WHERE id=?", Integer.class, template));
+ }
+
+ @Test void savingAndDeletingPlanTemplatesKeepsOwnershipAndRootTaskDates() throws Exception {
+  var plan = owner.ok("POST", "/plans", Map.of("title", "计划另存模板", "startDate", "2026-11-07", "tasks", List.of(Map.of("title", "父任务", "dueDate", "2026-11-09"))));
+  long planId = plan.get("id").asLong(), parentId = plan.get("tasks").get(0).get("id").asLong();
+  owner.ok("POST", "/plans/" + planId + "/tasks", Map.of("title", "不应单独展开的子任务", "parentId", parentId));
+  assertEquals(404, other.request("POST", "/plans/" + planId + "/template", null).statusCode());
+  long template = owner.ok("POST", "/plans/" + planId + "/template", Map.of("visibility", "private")).get("id").asLong();
+  assertEquals("父任务|第 3 天", db.queryForObject("SELECT tasks FROM plan_templates WHERE id=?", String.class, template));
+  assertEquals(403, other.request("DELETE", "/plans/templates/" + template, null).statusCode());
+  var applied = owner.ok("POST", "/plans/templates/" + template + "/apply", Map.of("startDate", "2026-11-10", "endDate", "2026-11-11"));
+  assertEquals(1, applied.get("tasks").size());
+  assertEquals("2026-11-11", applied.get("tasks").get(0).get("due_date").asText());
+  assertTrue(owner.ok("GET", "/plans/templates", null).has("mine"));
+  assertTrue(owner.ok("DELETE", "/plans/templates/" + template, null).get("deleted").asBoolean());
+  assertEquals(404, owner.request("POST", "/plans/templates/" + template + "/apply", null).statusCode());
+ }
+
  @Test void privateTemplatesAndRoomMessagesKeepTheirHttpContracts() throws Exception {
   long template = owner.ok("POST", "/plans/templates", Map.of("title", "私有模板回归", "subject", "数学", "visibility", "private", "tasks", List.of("复习概念|第 1 天", "完成练习|第 2 天"))).get("id").asLong();
   assertEquals(400, other.request("POST", "/plans/templates/" + template + "/apply", null).statusCode());

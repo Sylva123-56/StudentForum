@@ -6,7 +6,7 @@
 
 目标：改善学习与维护体验，逐步形成 Controller → Service → Repository/Mapper → 数据库的分层结构。
 
-> 当前状态：2026-11-07 已完成上一轮剩余的资料、合集/专栏和知识共享 SQL 下沉，并迁移调用方、删除论坛旧权限/校验转发。代码按模块测试、提交并推送。最新全量 **208 项通过（含 23 项真实 MySQL + HTTP 集成测试），无失败、错误或跳过**。核心数据访问分层已贯通，但 Map 类型化、大业务类细分、所有并发边界和部署同版本 MySQL 8 验证尚未全部完成。
+> 当前状态：2026-11-07 已完成上一轮剩余的资料、合集/专栏和知识共享 SQL 下沉，并迁移调用方、删除论坛旧权限/校验转发。代码按模块测试、提交并推送。随后继续拆出学习计划模板业务，统一两个创建入口的私有模板权限。最新全量 **226 项通过（含 25 项真实 MySQL + HTTP 集成测试），无失败、错误或跳过**。核心数据访问分层已贯通，但 Map 类型化、大业务类细分、所有并发边界和部署同版本 MySQL 8 验证尚未全部完成。
 
 ## 一、阶段成果与当前改动
 
@@ -167,13 +167,21 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 更新全部构造调用及测试，新增 4 项回归覆盖帖子内容校验、已删除帖子/非作者拒绝、小组后台权限失败短路和 `/api/me` 字段契约。
 - 全量 **208 项通过，含 23 项集成测试，无失败、错误或跳过**；日志 `target/forum-boundary-full-test.log`。静态搜索确认 Service 中无 JdbcTemplate 或直接 SQL，知识模块无 `k.db` / `k.forum` 字段穿透。
 
+### 16. 2026-11-07 学习计划模板职责拆分
+
+- 新增 `StudyPlanTemplateService`，承接模板分类列表、创建、计划另存模板、删除及模板任务展开；Controller 直接调用模板服务，不保留原 Service 转发方法。
+- `StudyPlanService` 仍编排创建计划与套用模板生成计划的完整事务；任务展开加入外层事务，无双向 Service 依赖，不新增 SQL、表或框架。
+- 保留模板 JSON 字段、默认值、本人计划 404、非本人/官方模板删除 403、相对到期日/截止日截断、只保存根任务等现有行为。
+- 修复原有权限遗漏：`POST /api/plans` 携带 `templateId` 不再绕过私有模板校验，与 `/templates/{id}/apply` 统一返回 400；验证拒绝访问和后续任务校验失败均回滚已创建计划及模板任务。这是本批唯一有意收紧的权限行为。
+- 新增 13 项模板单元测试、3 项 HTTP 契约测试和 2 项真实集成测试；全量 **226 项通过，其中集成 25 项，无失败、错误或跳过**。日志：`target/plan-template-full-test.log`。
+
 ## 二、尚未完成的部分
 
 本轮已完成前一版本中资料、合集/专栏、知识共享 SQL 下沉及论坛旧权限/校验转发两项高优先级工作。后续不再重复迁移已经下沉的数据访问。
 
 | 优先级 | 待办 | 完成标准 |
 | --- | --- | --- |
-| 中 | 继续拆分过大的业务类 | 优先评估 `GroupService`、`StudyPlanService`，按真实业务边界拆分，不为分层新增空接口 |
+| 中 | 继续拆分过大的业务类 | `StudyPlanTemplateService` 已拆出；继续评估小组职责及学习计划任务操作，按真实业务边界拆分，不为分层新增空接口 |
 | 中 | 渐进替换 Map 与含糊命名 | 从稳定请求、响应与核心状态开始，保持 JSON 字段和错误语义；知识模块的 `k` 已统一为 `knowledge` |
 | 中 | 改善过长业务方法可读性 | 分阶段展开压缩写法、拆分复杂分支；本轮已展开共享可见性规则，但未宣称全项目完成 |
 | 中 | 补齐验证边界 | 在与部署一致的 MySQL 8 专用实例重跑；补充更多并发、文件/数据库联动和浏览器流程覆盖 |
@@ -183,13 +191,13 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 
 ## 三、验证记录与边界
 
-### 最近一次代码验证（2026-11-07，论坛边界收尾）
+### 最近一次代码验证（2026-11-07，学习计划模板拆分）
 
-- 每批变更后执行 `mvn -q test` 并启用 `KNOWLEDGE_INTEGRATION=true`；最后一次退出码 0。汇总 `target/surefire-reports/TEST-*.xml`：**208 项通过，0 失败、0 错误、0 跳过**，其中 `KnowledgeIntegrationTest` **23 项**。
+- 每批变更后执行 `mvn -q test` 并启用 `KNOWLEDGE_INTEGRATION=true`；最后一次退出码 0。汇总 `target/surefire-reports/TEST-*.xml`：**226 项通过，0 失败、0 错误、0 跳过**，其中 `KnowledgeIntegrationTest` **25 项**。
 - Java **21.0.5**，路径 `C:\Program Files\Java\jdk-21`；专用连接为 `jdbc:mysql://127.0.0.1:3308/student_forum_knowledge_test_refactor`，通过 `KNOWLEDGE_TEST_DB_URL` 指定，保留库名包含 `knowledge_test` 的保护。未启用集成开关时，这组集成测试按设计跳过。
-- 独立实例为 MySQL **26.7**，数据目录 `target/refactor-mysql`，本轮仅为回归重启此实例，测试完成后核对父进程、数据目录及端口，仅关闭本轮启动的独立实例；未使用或修改正常业务数据库。该版本不替代部署 MySQL 8 的兼容性验证。
-- 四批日志分别为 `target/resource-full-test.log`、`target/collection-full-test.log`、`target/knowledge-boundary-full-test.log`、`target/forum-boundary-full-test.log`。
-- 23 项真实集成测试含原有 21 项及本轮新增的资料文件认领回滚、合集计数/排序与专栏权限回归。覆盖 Session/CSRF、账户与版主范围、私有文件、事务回滚/提交后清理、学习联动、小组和社交隐私、增强发布及定时草稿失败隔离。定时发布失败注入的 WARN/堆栈为预期，最终测试报告无失败。
+- 独立实例为 MySQL **26.7**，数据目录 `target/refactor-mysql`，本轮仅为回归重启此实例，收尾时核对父进程、数据目录及端口，仅关闭本轮启动的独立实例；未使用或修改正常业务数据库。该版本不替代部署 MySQL 8 的兼容性验证。
+- 前四批日志分别为 `target/resource-full-test.log`、`target/collection-full-test.log`、`target/knowledge-boundary-full-test.log`、`target/forum-boundary-full-test.log`。
+- 25 项真实集成测试含原有 23 项及本批新增的模板权限/事务回滚、另存/删除与相对日期回归。覆盖 Session/CSRF、账户与版主范围、私有文件、事务回滚/提交后清理、学习联动、小组和社交隐私、增强发布及定时草稿失败隔离。定时发布失败注入的 WARN/堆栈为预期，最终测试报告无失败。
 - `git diff --check` 作为额外格式检查；不替代业务测试。本轮未修改前端，未重跑前端构建或完整浏览器端到端流程。
 
 ### 历史验证结果
@@ -207,6 +215,7 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 | 合集与专栏 | 195 | 23 | 全部通过、无跳过；提交 `2b24672` |
 | 知识共享边界 | 204 | 23 | 全部通过、无跳过；提交 `240a30f` |
 | 论坛权限/校验转发收尾 | 208 | 23 | 全部通过、无跳过；提交 `faad0c6` |
+| 学习计划模板职责拆分 | 226 | 25 | 全部通过、无跳过；随本阶段提交 |
 
 - 旧记录中的 `127.0.0.1:13306`、`target/refactor-mysql-data` 与带 `20261102` 后缀的专用库属于前序验证环境，不是最近一次报告的连接信息。旧库升级 V15、空库迁移的结论为前序阶段记录，本次未重新执行。
 - 前序记录中的 `npm run build` 已通过，存在前端 chunk 大于 500 kB 的提示；本轮后续阶段未修改前端，本次未重新执行前端构建。
@@ -242,8 +251,10 @@ Service 负责权限、输入、可见性与事务编排，Repository/Mapper 负
 
 ## 五、下一步建议与阅读顺序
 
-1. 优先准备与实际部署一致的 MySQL 8 独立测试环境，再跑当前 23 项集成测试；保持独立库保护，不对正常业务库运行破坏性回归。
-2. 按业务边界评估 `GroupService`、`StudyPlanService` 的职责，逐批拆分并保留事务/权限回归，不一次重写全部模块。
+1. 优先准备与实际部署一致的 MySQL 8 独立测试环境，再跑当前 25 项集成测试；保持独立库保护，不对正常业务库运行破坏性回归。
+2. 模板业务已拆分；继续按业务边界评估 `GroupService` 与学习计划任务操作的职责，逐批拆分并保留事务/权限回归，不一次重写全部模块。
 3. 渐进整理 Map、请求/响应类型和过长业务方法，每批同步文档、验证、提交及推送。
+
+学习计划模板可读 `StudyPlanController → StudyPlanTemplateService → StudyPlanRepository`，计划创建事务可读 `StudyPlanService.createPlan/applyTemplateEndpoint → StudyPlanTemplateService.applyTasks`。
 
 推荐先读 `ForumController → ForumQueryService → ForumMapper`，再读 `StudyRewardService → PointService / BadgeService → BadgeRepository`。知识列表/写入可读 `NoteController → NoteService → NoteRepository`，详情可读 `NoteService.detail → KnowledgeService.note → KnowledgeRepository.note`，这条链路已无 Service SQL。资料文件与扣分可读 `ResourceService.create/download → ResourceRepository`；合集条目与专栏可读 `CollectionService → CollectionRepository`，目标内容可见性统一由 `KnowledgeService` 校验。`ForumService.hardDeletePost` 与 `DraftPublisher → ScheduledDraftService → DraftRepository` 展示提交后文件清理和逐草稿事务隔离。
