@@ -13,10 +13,12 @@ import org.springframework.web.server.ResponseStatusException;
 public class NoteService {
     private final KnowledgeService knowledge;
     private final NoteRepository notes;
+    private final AccountAccessService accounts;
 
-    public NoteService(KnowledgeService knowledge, NoteRepository notes) {
+    public NoteService(KnowledgeService knowledge, NoteRepository notes, AccountAccessService accounts) {
         this.knowledge = knowledge;
         this.notes = notes;
+        this.accounts = accounts;
     }
 
     public Map<String, Object> list(Authentication auth, boolean mine, String query,
@@ -33,7 +35,7 @@ public class NoteService {
 
     @Transactional
     public Map<String, Object> create(Authentication auth, Map<String, Object> input) {
-        knowledge.forum.writable(auth);
+        accounts.writable(auth);
         String title = knowledge.text(input, "title", 2, 160);
         String content = knowledge.text(input, "content", 1, 30000);
         String status = knowledge.choice(input, "status", "draft", "draft", "published");

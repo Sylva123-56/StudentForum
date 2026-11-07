@@ -18,7 +18,7 @@ class NoteServiceTest {
         var auth = new UsernamePasswordAuthenticationToken("7", null);
         when(knowledge.note(auth, 42L)).thenReturn(Map.of("id", 42L, "user_id", 7L));
         assertEquals(404, assertThrows(ResponseStatusException.class,
-                () -> new NoteService(knowledge, repository).edit(auth, 42L, Map.of("title", "变化")))
+                () -> new NoteService(knowledge, repository, mock(com.studentforum.service.AccountAccessService.class)).edit(auth, 42L, Map.of("title", "变化")))
                 .getStatusCode().value());
         verify(repository).lock(42L);
         verify(repository, never()).update(anyLong(), anyString(), anyString(), anyString(), anyString(), anyString());
