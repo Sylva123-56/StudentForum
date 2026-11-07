@@ -69,6 +69,28 @@ class KnowledgeIntegrationTest {
   assertNull(db.queryForObject("SELECT resource_id FROM resource_uploads WHERE id=?",Long.class,foreign));
   assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM resource_files f JOIN resource_uploads u ON u.stored_name=f.file_path WHERE u.id=?",Integer.class,owned));
  }
+ @Test void collectionCountsOrderingAndEpisodeOwnershipRemainConsistent() throws Exception {
+  long note=owner.ok("POST","/notes",Map.of("title","合集排序回归笔记","content","公开笔记内容","status","published")).get("id").asLong();
+  long first=owner.ok("POST","/collections",Map.of("title","第一个合集")).get("id").asLong();
+  long second=owner.ok("POST","/collections",Map.of("title","第二个合集")).get("id").asLong();
+  owner.ok("POST","/collections/"+first+"/items",Map.of("itemType","note","itemId",note,"sortOrder",4));
+  long item=owner.ok("GET","/collections/"+first,null).get("items").get(0).get("id").asLong();
+  assertEquals(404,owner.request("PATCH","/collections/"+second+"/items/"+item,Map.of("sortOrder",1)).statusCode());
+  owner.ok("PATCH","/collections/"+first+"/items/"+item,Map.of("sortOrder",2));
+  assertEquals(2,owner.ok("GET","/collections/"+first,null).get("items").get(0).get("sort_order").asInt());
+  other.ok("POST","/collections/"+first+"/follow",Map.of("active",true));
+  other.ok("POST","/collections/"+first+"/follow",Map.of("active",true));
+  assertEquals(1,db.queryForObject("SELECT follower_count FROM collections WHERE id=?",Integer.class,first));
+  other.ok("POST","/collections/"+first+"/follow",Map.of("active",false));
+  assertEquals(0,db.queryForObject("SELECT follower_count FROM collections WHERE id=?",Integer.class,first));
+  owner.ok("DELETE","/collections/"+first+"/items/"+item,null);
+  assertEquals(0,db.queryForObject("SELECT item_count FROM collections WHERE id=?",Integer.class,first));
+  long column=owner.ok("POST","/columns",Map.of("title","专栏权限回归")).get("id").asLong();
+  long episode=owner.ok("POST","/columns/"+column+"/episodes",Map.of("title","未发表的一期","content","仅作者可见","status","draft")).get("id").asLong();
+  assertEquals(1,owner.ok("GET","/columns/"+column,null).get("episodes").size());
+  assertEquals(0,other.ok("GET","/columns/"+column,null).get("episodes").size());
+  assertEquals(403,other.request("PATCH","/columns/"+column+"/episodes/"+episode,Map.of("title","越权修改","content","不应成功")).statusCode());
+ }
  @Test void resourceMetadataMigrationRepairsLegacySchema() throws Exception{
   assertTrue(db.queryForObject("SELECT DATABASE()",String.class).toLowerCase(Locale.ROOT).contains("knowledge_test"));
   db.execute("ALTER TABLE resources DROP COLUMN exam");db.execute("ALTER TABLE resources DROP COLUMN textbook");

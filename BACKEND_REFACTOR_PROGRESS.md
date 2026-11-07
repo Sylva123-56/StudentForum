@@ -1,11 +1,11 @@
 # 后端重构进度记录
 
-更新日期：2026-11-07  
+更新日期：2026-11-07
 代码分支：`codex/rebuild`；按模块验证、提交并推送，最新提交以 `git log -1` 为准；历史提交与推送状态见第四节
 
 目标：改善学习与维护体验，逐步形成 Controller → Service → Repository/Mapper → 数据库的分层结构。
 
-> 当前状态：2026-11-07 已恢复重构。资料写入、下载及治理 SQL 已迁入 `ResourceRepository`，资料详情共享查询和访问策略仍经 `KnowledgeService`。本轮全量测试 **188 项通过（含 22 项集成测试），无失败、错误或跳过**；合集/专栏和知识共享服务的剩余迁移继续进行，尚未宣称完成全部后端重构。
+> 当前状态：2026-11-07 已恢复重构。资料与合集/专栏的业务 SQL 已分别迁入 `ResourceRepository`、`CollectionRepository`，共享详情查询与权限仍经 `KnowledgeService`。本轮全量测试 **195 项通过（含 23 项集成测试），无失败、错误或跳过**；下一部分清理知识共享服务的 SQL、通用入口与字段穿透依赖。
 
 ## 一、阶段成果与当前改动
 
@@ -56,7 +56,8 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 | 错题及图片 | 本批列表、写入、复习、统计、复习计划和图片元数据 SQL 移至 `MistakeRepository`、`MistakeImageRepository` | 错题详情、成员访问检查等仍经 `KnowledgeService` |
 | Wiki | 本批列表、编辑行锁、修订和治理查询移至 `WikiRepository`，显式注入 `AccountAccessService` | 审计及部分校验仍依赖 `KnowledgeService` |
 | 资料 | 列表、文件认领、下载扣分、互动和治理 SQL 已进入 `ResourceRepository`，显式依赖 `AccountAccessService` | 共享详情读取与审计仍经 `KnowledgeService` |
-| 合集/专栏及知识共享服务 | 保留已有 HTTP/Service 分离成果 | `CollectionService` 及 `KnowledgeService` 仍有 SQL 和字段穿透访问 |
+| 合集/专栏 | 检索、增改、条目排序/计数、关注收藏及连载与治理 SQL 已迁入 `CollectionRepository` | 共享详情及可见性仍经 `KnowledgeService` |
+| 知识共享服务 | 保留既有共享可见性与校验规则 | `KnowledgeService` 仍有 SQL 和字段穿透访问 |
 
 这里的“下沉”指按业务含义建立 Repository 方法，而不是将 JdbcTemplate 再包装成一个接收任意 SQL 的通用工具。
 
@@ -143,11 +144,18 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 - 新增 6 项仓库回归和 1 项真实 HTTP 回归；后一用例确认创建资料时第二个文件越权会回滚资料行、第一个文件的认领和关联文件行。
 - Java 21 + 专用 MySQL 26.7 实例上重跑 `mvn -q test`，**188 项通过，含 22 项集成测试，无失败、错误或跳过**；日志 `target/resource-full-test.log`。未触碰正常业务库，MySQL 8 验证边界仍保留。
 
+### 13. 2026-11-07 合集与专栏数据访问迁移
+
+- 新增 `CollectionRepository`，承接列表筛选、条目增改/排序与计数、关注/收藏、连载、行锁及后台推荐；`CollectionService` 显式依赖账户权限和 `ContentRules`，不再持有 SQL 或访问 `k.db` / `k.forum`。
+- 合集/专栏表名限定为两个已支持选项，收藏和关注的用户条件改为参数绑定；保留公开/作者查询差异、21 条预取分页、草稿仅作者可见、父行锁及事务。
+- 新增 6 项仓库回归和 1 项真实 HTTP 回归，覆盖跨合集条目隔离、排序、重复关注计数、取消关注与删除重计数、专栏草稿可见性和越权修改。
+- 全量 **195 项通过，含 23 项集成测试，无失败、错误或跳过**；日志 `target/collection-full-test.log`。
+
 ## 二、尚未完成的部分
 
 | 优先级 | 待办 | 完成标准 |
 | --- | --- | --- |
-| 高 | 完成知识模块剩余 SQL 下沉 | 处理 `ResourceService`、`CollectionService` 及 `KnowledgeService` 中的详情读取、成员查询、审计和通用 SQL 入口；保留权限、参数、错误与返回语义 |
+| 高 | 完成知识模块剩余 SQL 下沉 | 处理 `KnowledgeService` 中的详情读取、成员查询、审计和通用 SQL 入口；资料与合集/专栏业务 SQL 已完成迁移；保留权限、参数、错误与返回语义 |
 | 高 | 收敛共享 Service 的剩余职责 | 随调用方迁移移除 `ForumService` 的旧权限/校验转发，降低知识模块对 `KnowledgeService` 字段及其他服务实例的穿透访问；`StudyToolService.row/requiredRow` 已删除 |
 | 中 | 继续拆分过大的业务类 | 优先评估 `GroupService`、`StudyPlanService` 等仍集中的职责；内容工作流已按投票、草稿、申诉、定时发布拆分 |
 | 中 | 渐进替换 Map 与含糊命名 | 优先为稳定的请求、响应和核心业务状态引入类型，逐步减少强制转换、字符串字段名及 `k` 等过短变量名 |
@@ -203,6 +211,8 @@ Java 代码位于 `src/main/java/com/studentforum/`，应用入口 `ForumApplica
 | `8d28c64` | 小组与社交数据访问隔离 | 已提交；本地 reflog 记录推送成功 |
 | `a021ef2` | 投票、草稿、申诉领域服务及定时发布拆分 | 已提交并推送（`8d28c64..a021ef2`） |
 | `5a73798` | 错题、图片与 Wiki Repository 迁移及 5 项回归测试 | 已提交并推送（`a021ef2..5a73798`），`git ls-remote` 已确认 |
+| `607bc62` | 上一轮进度文档 | 已推送 |
+| `1feecef` | 资料 Repository 与下载事务回归 | 已提交并推送，`git ls-remote` 已确认 |
 
 本轮用户已明确授权每完成一部分即提交并推送；后续又要求完成当前小任务后暂停。2026-11-05 已完成错题、图片与 Wiki 后暂停；2026-11-07 用户要求继续，现按模块验证、提交并推送。
 
